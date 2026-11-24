@@ -1,6 +1,6 @@
 # TODO – Luồng B (WMS ảo + WCS ảo) – cập nhật 24/11/2026
 
-Trạng thái: Lee duyệt viết spec + code + test (24/11, 21:30). **v0.1.0 xong ngày 24/11**: spec `docs/SPEC.md`, code `g8b/`, test `docs/TEST_REPORT.md`.
+Trạng thái: **v0.5.0 (25/11/2026)**; Lee duyệt viết spec + code + test từ 24/11. v0.1.0 xong ngày 24/11: spec `docs/SPEC.md`, code `g8b/`, test `docs/TEST_REPORT.md`.
 
 ## Đã chốt (Lee, 24/11/2026)
 - Luồng B chạy **hàng và kệ thật**, có **chia zone** riêng cho B.
@@ -36,7 +36,7 @@ Trạng thái: Lee duyệt viết spec + code + test (24/11, 21:30). **v0.1.0 xo
 ## Kiểm tra lúc nghiệm thu (không phải câu hỏi)
 - [ ] RCS gửi callback tới mọi URL task-status đã khai, hay chỉ tới 1 URL? Phía B đã xử lý được cả hai trường hợp.
 - [ ] Tên điểm có dấu `-` được RCS chấp nhận (spec ghi tên 4–10 ký tự chữ và số), và kệ FK nhiều tầng thì mỗi tầng có tên điểm riêng.
-- [ ] Cổng của B không trùng với WCS gốc (A đang dùng 8040, 8060, 8090, 8088).
+- [x] Cổng của B không trùng với WCS gốc (A đang dùng 8040, 8060, 8090, 8088) – B dùng 9000 / 9100 / 9200, Mongo 27018.
 
 ## P0 / P1 – đã làm (24/11)
 - [x] Spec: `docs/SPEC.md` (WMS→WCS, WCS→WMS, device API, RCS, state machine, outbox, cutover).
@@ -47,9 +47,18 @@ Trạng thái: Lee duyệt viết spec + code + test (24/11, 21:30). **v0.1.0 xo
 - [x] Test với **G8-Export thật** (driver simulator) và **G8-ID thật** (MANUAL + công cụ mô phỏng) PASS (`tests/g8_modules_test.py`).
 - [x] File `.bat`: install, start_mongodb, run_wms, run_wcs, run_simulators, run_all_demo, run_tests.
 
+## v0.2 – v0.5 (24–25/11)
+- [x] Dashboard, cấu hình và đặt lệnh trên web; MongoDB riêng cổng 27018.
+- [x] Danh sách vị trí theo file highbay (form 14 cột + RAW), nhiều kho theo tiền tố, nạp có chọn điểm + xem khác biệt, xoá kéo theo pallet; xuất Excel dạng RAW.
+- [x] WMS: danh mục sản phẩm (quy cách thùng / pallet), 4 loại lệnh (định danh, luân chuyển, xuất hàng, cập nhật vị trí), sửa tay pallet / ô.
+- [x] Site giao diện chung :9200 (menu nhóm sổ xuống, hộp thoại lựa chọn, logo G8 HOME, nút hướng dẫn PDF).
+- [x] Hướng dẫn sử dụng `docs/HUONG_DAN_SU_DUNG.pdf` (tools/build_guide.py).
+
 ## Còn lại
 - [ ] Đổi đích task đang chạy (`questionLocationNew` → `Location_Stocks` + RCS `updateOrderPointInfo`).
-- [ ] API 6 (ASN confirm bằng PDA), API 9 (đóng lệnh SX) – TKELog chưa rõ chiều gọi.
+- [ ] API 6 (ASN confirm bằng PDA) – WCS gốc cũng chưa bật. API 9 (đóng lệnh SX) – WCS gốc gắn chung endpoint hủy định danh; hỏi TKSolution có tách riêng không.
+- [ ] Xác minh TKELog đang gửi mã vị trí dạng "." (bản tin thật 19/10: `S02.257.1`) hay "-" (luồng B nhận cả hai, tự đổi sang "-").
+- [ ] Robot mặc định cho kho S / S02: luồng B để 1 (nâng hạ), nhưng bản tin thật của WCS gốc gửi Type_Robot_ID 2 (đội gầm) cho ô S01 / S02 – Lee chốt rồi sửa ở Danh mục → Kho.
 - [ ] Test chéo với các script giả lập của G8-WCS gốc (`scripts/simu_*`, đang viết cứng IP 192.168.x) và `g8-ops-monitor mock_ics`.
 - [ ] Đăng nhập cho giao diện web (hiện mở trong LAN như các tool G8 khác).
 - [ ] Ở hiện trường: thêm mục callback trên RCS, đặt tên điểm zone B, khoá ô zone B trên TKELog, chọn bàn định danh đầu tiên (Line_ID + IP), cấu hình `config/*.json`, chạy thử 1 PO.

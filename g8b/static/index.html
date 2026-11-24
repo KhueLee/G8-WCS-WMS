@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>G8 luồng B</title><link rel="stylesheet" href="/static/style.css"><link rel="icon" href="/static/logo.png"></head>
+<body>
+<div class="app">
+  <aside><div class="brand"><img class="logo" src="/static/logo.png" alt="G8 HOME"></div>
+    <h1>WMS ảo + WCS B</h1><div class="ver" id="ver">luồng B</div>
+    <a class="p help" href="/huong-dan" target="_blank" rel="noopener">Hướng dẫn sử dụng (PDF)</a>
+    <nav id="tabs" style="margin-top:12px"></nav><div class="conn" id="conn"></div></aside>
+  <main id="main"></main>
+</div>
+<div id="toast"></div>
+<script src="/static/common.js"></script>
+<script src="/static/wms.js"></script>
+<script src="/static/wcs.js"></script>
+<script>
+{ const th = new URLSearchParams(location.search).get('theme'); if (th) document.documentElement.dataset.theme = th; }
+group('overview', 'Tổng quan');
+group('order', 'Đặt lệnh');
+group('track', 'Theo dõi kho (WMS)');
+group('control', 'Robot & trạm (WCS)');
+group('catalog', 'Danh mục');
+group('system', 'Hệ thống');
+
+async function conn() {
+  const [w, c] = await Promise.all([api(W('/api/config')).catch(() => ({})), api(C('/api/status')).catch(() => ({}))]);
+  $('#ver').textContent = `WMS ${w.version ? 'v' + w.version : '–'} · WCS ${c.version ? 'v' + c.version : '–'}`;
+  $('#conn').innerHTML = `WMS ảo ${status(!!w.version, 'Chạy', 'Không kết nối')}<br>WCS B ${status(!!c.version, 'Chạy', 'Không kết nối')}<br>RCS ${status(c.rcs_ok)}`;
+}
+conn(); setInterval(conn, 5000);
+loadWmsCfg().finally(() => startSite('w_dash'));
+</script>
+</body></html>

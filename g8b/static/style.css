@@ -62,10 +62,10 @@ td.num, th.num { text-align:right; font-variant-numeric: tabular-nums; }
 pre { margin:2px 0; max-width:900px; white-space:pre-wrap; word-break:break-all; font-size:12px; }
 
 /* ---------- nút, form */
-button.a { font:inherit; font-size:12px; padding:3px 9px; cursor:pointer; border:1px solid var(--line); border-radius:5px; background:var(--surface); color:var(--fg); }
-button.a:hover { border-color:var(--acc); }
-button.p { font:inherit; padding:7px 16px; background:var(--acc); color:var(--acc-fg); border:0; border-radius:6px; cursor:pointer; }
-button.d { color:var(--crit-ink); }
+.a { font:inherit; font-size:12px; padding:3px 9px; cursor:pointer; border:1px solid var(--line); border-radius:5px; background:var(--surface); color:var(--fg); }
+.a:hover { border-color:var(--acc); }
+.p { font:inherit; padding:7px 16px; background:var(--acc); color:var(--acc-fg); border:0; border-radius:6px; cursor:pointer; }
+.d { color:var(--crit-ink); }
 .card { background:var(--surface); border:1px solid var(--line); border-radius:8px; padding:14px; margin-bottom:14px; }
 .card h3 { margin:0 0 10px; font-size:14px; }
 .card .hint { color:var(--mut); font-size:12px; margin:-4px 0 10px; }
@@ -113,3 +113,39 @@ input:focus, select:focus, textarea:focus { outline:2px solid var(--acc); outlin
 .cell { border:1px solid var(--line); border-radius:5px; padding:4px; font-size:11px; background:var(--surface); cursor:pointer; }
 .cell.FULL { border-left:4px solid var(--series-1); } .cell.BUSY { border-left:4px solid var(--series-2); }
 .cell.LOCKED { border-left:4px solid var(--series-3); opacity:.8; }
+
+/* ---------- menu trái: nhóm lớn, bấm để sổ chức năng con */
+#tabs .ng { margin-bottom:2px; }
+#tabs .gh { width:100%; display:flex; justify-content:space-between; align-items:center; border:0; background:none; color:var(--fg);
+  font:inherit; font-weight:600; padding:9px 10px; border-radius:6px; cursor:pointer; text-align:left; }
+#tabs .gh:hover { background:var(--bg); }
+#tabs .gh i { font-style:normal; color:var(--mut); }
+#tabs .gi { display:none; flex-direction:column; gap:1px; padding:2px 0 6px 8px; border-left:2px solid var(--line); margin-left:10px; }
+#tabs .ng.open .gi { display:flex; }
+#tabs .it { text-align:left; border:0; background:none; color:var(--fg2); padding:7px 10px; border-radius:6px; cursor:pointer; font:inherit;
+  display:flex; justify-content:space-between; gap:8px; align-items:center; }
+#tabs .it small { font-size:10px; color:var(--mut); border:1px solid var(--line); border-radius:8px; padding:0 5px; }
+#tabs .it:hover { background:var(--bg); color:var(--fg); }
+#tabs .it.on { background:var(--acc); color:var(--acc-fg); }
+#tabs .it.on small { color:var(--acc-fg); border-color:var(--acc-fg); }
+main > h2 .b { vertical-align:middle; font-weight:400; }
+.logo { display:block; width:100%; max-width:170px; height:auto; margin:0 auto 6px; }
+.help { display:block; text-align:center; margin:10px 6px 0; text-decoration:none; }
+@media (max-width: 760px) {
+  #tabs { flex-direction:column; }
+  #tabs .gi { padding-left:4px; }
+  .logo { max-width:120px; }
+}
+
+/* ---------- hộp thoại lựa chọn */
+#dlg { position:fixed; inset:0; background:rgba(0,0,0,.45); display:none; align-items:center; justify-content:center; z-index:40; padding:16px; }
+#dlg.show { display:flex; }
+#dlg .dbox { background:var(--surface); color:var(--fg); border:1px solid var(--line); border-radius:10px; padding:18px; width:min(520px, 100%);
+  box-shadow:0 10px 40px rgba(0,0,0,.35); }
+#dlg h3 { margin:0 0 10px; font-size:16px; }
+#dlg .dbody p { margin:0 0 10px; line-height:1.5; }
+#dlg .dbody select { min-width:220px; }
+#dlg .dbtn { display:flex; gap:8px; justify-content:flex-end; flex-wrap:wrap; margin-top:14px; }
+#dlg .dbtn button { padding:7px 14px; font-size:13px; }
+.brand { background:#fff; border-radius:8px; padding:8px; margin:0 0 10px; }
+.brand .logo { margin:0 auto; }

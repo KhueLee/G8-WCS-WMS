@@ -55,9 +55,8 @@ class RcsSim:
         self.step_s = a.step_s
         self.templates = set(a.templates.split(","))
         self.points: set[str] | None = None
-        if a.points and os.path.exists(a.points):
-            from .locations import load_file
-            self.points = {r["code"] for r in load_file(a.points)}
+        self.points_file, self.extra_points, self._pmtime = a.points, a.extra_points, None
+        self._load_points()
         self.area_id = a.area_id
         self.tasks: dict[str, dict] = {}
         self.busy: dict[str, str] = {}
@@ -68,7 +67,20 @@ class RcsSim:
         self.lock = threading.RLock()
         threading.Thread(target=self.loop, daemon=True).start()
 
+    def _load_points(self):
+        """Danh sách điểm hợp lệ = file vị trí (đọc lại khi file đổi) + điểm sàn khai thêm."""
+        if not self.points_file or not os.path.exists(self.points_file):
+            return
+        m = os.path.getmtime(self.points_file)
+        if m == self._pmtime:
+            return
+        from .locations import read_highbay
+        self.points = {r["code"] for r in read_highbay(self.points_file)}
+        self.points |= {p.strip().upper() for p in (self.extra_points or "").split(",") if p.strip()}
+        self._pmtime = m
+
     def add(self, b: dict) -> dict:
+        self._load_points()
         oid = str(b.get("orderId") or "")
         tpl = b.get("modelProcessCode")
         if not oid or not tpl:
@@ -423,7 +435,8 @@ def main():
     r.add_argument("--robots", type=int, default=3)
     r.add_argument("--step-s", type=float, default=1.0)
     r.add_argument("--templates", default="forkAutoTemplate2,liftMoveShelf2,G8ManualMove")
-    r.add_argument("--points", default="", help="file vị trí: chỉ chấp nhận điểm có trong file")
+    r.add_argument("--points", default="", help="file highbay: chỉ chấp nhận điểm có trong file")
+    r.add_argument("--extra-points", default="", help="điểm thêm ngoài file (điểm sàn), cách nhau dấu phẩy")
     r.add_argument("--area-id", type=int, default=2)
     i = sub.add_parser("ids")
     i.add_argument("--port", type=int, default=9501)

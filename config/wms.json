@@ -4,27 +4,30 @@
     "port": 9100
   },
   "mongo": {
-    "uri": "mongodb://127.0.0.1:27017",
+    "uri": "mongodb://127.0.0.1:27018",
     "db": "g8b_wms"
   },
   "wcs": {
     "url": "http://127.0.0.1:9000"
   },
-  "wh_code": "WH_TB",
   "users": {
     "WCS_API_User": "123456"
   },
   "token_minutes": 480,
   "locations": {
-    "file": "config/locations.json",
-    "store_zone": "B"
+    "file": "config/locations.xlsx",
+    "warehouses": "config/warehouses.json"
   },
   "stations": {
     "MCSX009": "BDD09",
     "BCXB001": "BCXB01"
   },
   "auto_putaway": true,
-  "putaway_robot": 1,
+  "codes": {
+    "po_prefix": "VAS",
+    "pallet_prefix": "LPNB",
+    "carton_prefix": "G8B"
+  },
   "outbox": {
     "retry_s": 5,
     "timeout_s": 10

@@ -7,3 +7,4 @@ logs/
 main.py
 config/*.local.json
 config/*.bak
+docs/huong_dan.html

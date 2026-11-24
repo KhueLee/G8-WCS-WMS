@@ -19,7 +19,7 @@ from typing import Any
 
 import uvicorn
 from fastapi import FastAPI, Request
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pymongo import ASCENDING, DESCENDING, ReturnDocument
 from pymongo.errors import DuplicateKeyError
@@ -29,11 +29,11 @@ from .common import (MsgLog, ROOT, ci_get, clean, deep_merge, hourly, http_post,
                      save_config, setup_logging, today_start)
 from .outbox import Outbox, accept_code
 
-VERSION = "0.2.0"
+VERSION = "0.5.0"
 
 DEFAULTS: dict = {
     "server": {"host": "0.0.0.0", "port": 9000},
-    "mongo": {"uri": "mongodb://127.0.0.1:27017", "db": "g8b_wcs"},
+    "mongo": {"uri": "mongodb://127.0.0.1:27018", "db": "g8b_wcs"},
     "wms": {"url": "http://127.0.0.1:9100", "user": "WCS_API_User", "password": "123456", "app_name": "TMS",
             "paths": {"login": "/API/General/Sys/Login",
                       "confirm_move": "/API/G8/Customer/Update/Pallet_Location",
@@ -43,8 +43,9 @@ DEFAULTS: dict = {
     "rcs": {"url": "http://127.0.0.1:7100", "area_id": 2, "from_system": "WCS-B", "order_prefix": "VB-",
             "poll_s": 2.0, "timeout_s": 10, "running_alert_min": 30,
             "templates": {"1": "forkAutoTemplate2", "2": "liftMoveShelf2"},
-            "high_priority_moves": [2, 14], "priority_high": 4, "priority_normal": 6},
-    "locations": {"file": "config/locations.json", "check": True},
+            "high_priority_moves": [2, 14], "priority_high": 4, "priority_normal": 6,
+            "path_by": "code"},          # taskPath: "code" = mã vị trí (tên điểm RCS) | "node" = Node trong file highbay
+    "locations": {"file": "config/locations.xlsx", "warehouses": "config/warehouses.json", "check": True},
     "identify_lines": [],
     "export_lines": [],
     "outbox": {"retry_s": 5, "timeout_s": 10},
@@ -97,7 +98,8 @@ class WCS:
         self.started_at = now()
         self._indexes()
         self._load_lines()
-        self._load_locations()
+        self.locstore = L.LocationStore(self.db, self.cfg, self._station_points)
+        self.locstore.load()
         self._register_outbox()
 
     # ------------------------------------------------------------------ khởi tạo
@@ -129,11 +131,8 @@ class WCS:
                                       "last_seen": None}},
                     upsert=True)
 
-    def _load_locations(self):
-        f = self.cfg["locations"].get("file")
-        if f and os.path.exists(f if os.path.isabs(f) else os.path.join(ROOT, f)):
-            r = L.sync_collection(self.locs, L.load_file(f))
-            log.info("Nạp vị trí %s: %s", f, r)
+    def _station_points(self) -> list[str]:
+        return [ln.get("location", "") for ln in self.cfg["identify_lines"] + self.cfg["export_lines"]]
 
     def _register_outbox(self):
         ob = self.outbox
@@ -333,7 +332,8 @@ class WCS:
             self.moves.update_one({"_id": t["_id"]}, {"$set": {"order_id": order_id}})
         prio = r["priority_high"] if t["type_move"] in r["high_priority_moves"] else r["priority_normal"]
         body = {"modelProcessCode": tpl, "priority": prio, "fromSystem": r["from_system"], "orderId": order_id,
-                "taskOrderDetail": [{"taskPath": f"{t['loc_old']},{t['loc_new']}", "shelfNumber": ""}]}
+                "taskOrderDetail": [{"taskPath": f"{self.rcs_point(t['loc_old'])},{self.rcs_point(t['loc_new'])}",
+                                     "shelfNumber": ""}]}
         status, resp, err = self._rcs("/ics/taskOrder/addTask", body)
         code = resp.get("code") if isinstance(resp, dict) else None
         if code in (1000, 2111):  # 2111 = đã có orderId này trên RCS (gửi lại sau khi khởi động lại)
@@ -347,6 +347,14 @@ class WCS:
         else:
             self._set_move(t, FAILED, order_id=order_id, error=f"RCS từ chối: {code} {resp.get('desc')}",
                            reason="RcsRejected")
+
+    def rcs_point(self, code: str) -> str:
+        """Điểm gửi RCS: mã vị trí (tên điểm) hoặc Node trong file highbay, theo rcs.path_by."""
+        if self.cfg["rcs"].get("path_by") == "node":
+            d = self.loc_get(code)
+            if d and d.get("node"):
+                return d["node"]
+        return code
 
     def move_worker_tick(self):
         with self._move_lock:
@@ -721,7 +729,6 @@ class WCS:
         merged = deep_merge(self.cfg, {k: new[k] for k in self.EDITABLE if k in new})
         for key in ("identify_lines", "export_lines"):
             merged[key] = new.get(key, [])
-        old_loc = self.cfg["locations"].get("file")
         self.cfg.clear()
         self.cfg.update(merged)
         save_config(self.cfg)
@@ -736,32 +743,9 @@ class WCS:
             for ln in self.cfg[key]:
                 self.lines.update_one({"line_id": ln["line_id"]},
                                       {"$set": {"enabled": bool(ln.get("enabled", True))}})
-        if self.cfg["locations"].get("file") != old_loc:
-            self._load_locations()
+        self.locstore.load()  # file / zone / điểm sàn của line có thể đã đổi
         log.info("Lưu cấu hình từ giao diện -> %s", self.cfg["_path"])
         return {"ok": True, "msg": f"Đã lưu {self.cfg['_path']} và áp dụng"}
-
-    def locations_def(self) -> dict:
-        d = L.read_def(self.cfg["locations"].get("file", ""))
-        d["count"] = self.locs.count_documents({})
-        return d
-
-    def locations_save_def(self, data: dict) -> dict:
-        f = self.cfg["locations"].get("file", "")
-        if not f.lower().endswith(".json"):
-            f = "config/locations.json"
-            self.cfg["locations"]["file"] = f
-            save_config(self.cfg)
-        n = L.write_def(f, data)
-        self._load_locations()
-        return {"ok": True, "msg": f"Đã lưu {n} vị trí vào {f}"}
-
-    def locations_upload(self, name: str, b64: str) -> dict:
-        rel = L.save_upload(name, base64.b64decode(b64.split(",")[-1]))
-        self.cfg["locations"]["file"] = rel
-        save_config(self.cfg)
-        self._load_locations()
-        return {"ok": True, "msg": f"Đã nạp {rel}: {len(L.load_file(rel))} vị trí"}
 
     def dashboard(self) -> dict:
         t0 = today_start()
@@ -839,6 +823,11 @@ class WCS:
 
 
 # ====================================================================== HTTP
+def site_redirect(req: Request) -> RedirectResponse:
+    """Giao diện đã gom về site chung (python -m g8b.web, cổng 9200 cùng máy)."""
+    return RedirectResponse(f"http://{req.url.hostname}:9200/")
+
+
 def build_app(w: WCS) -> FastAPI:
     app = FastAPI(title="G8 WCS B", version=VERSION)
     app.mount("/static", StaticFiles(directory=os.path.join(ROOT, "g8b", "static")), name="static")
@@ -913,8 +902,8 @@ def build_app(w: WCS) -> FastAPI:
 
     # --- giao diện / API giám sát
     @app.get("/")
-    def ui():
-        return FileResponse(os.path.join(static, "wcs.html"))
+    def ui(req: Request):
+        return site_redirect(req)
 
     @app.get("/api/dashboard")
     def api_dashboard():
@@ -939,25 +928,6 @@ def build_app(w: WCS) -> FastAPI:
             return w.config_save(await req.json())
         except Exception as e:
             log.exception("lưu cấu hình lỗi")
-            return {"ok": False, "msg": str(e)}
-
-    @app.get("/api/locations/def")
-    def api_loc_def():
-        return w.locations_def()
-
-    @app.put("/api/locations/def")
-    async def api_loc_def_save(req: Request):
-        try:
-            return w.locations_save_def(await req.json())
-        except Exception as e:
-            return {"ok": False, "msg": str(e)}
-
-    @app.post("/api/locations/upload")
-    async def api_loc_upload(req: Request):
-        b = await req.json()
-        try:
-            return w.locations_upload(b.get("name", ""), b.get("b64", ""))
-        except Exception as e:
             return {"ok": False, "msg": str(e)}
 
     @app.get("/api/status")
@@ -1027,10 +997,8 @@ def build_app(w: WCS) -> FastAPI:
                               {"$set": {"state": st, "pallet_id": b.get("pallet_id") if st == L.FULL else None}})
         return {"ok": r.modified_count == 1 or r.matched_count == 1}
 
-    @app.post("/api/locations/reload")
-    def api_location_reload():
-        w._load_locations()
-        return {"ok": True}
+
+    L.add_routes(app, w.locstore, lambda: save_config(w.cfg), manage_warehouses=False)
 
     @app.get("/api/outbox")
     def api_outbox(status: str = "", limit: int = 200):
@@ -1060,6 +1028,7 @@ def main():
     log.info("WCS B v%s - cấu hình %s", VERSION, cfg["_path"])
     w = WCS(cfg)
     w.start()
+    w.locstore.watch()
     app = build_app(w)
     log.info("Nghe tại %s:%s", cfg["server"]["host"], cfg["server"]["port"])
     uvicorn.run(app, host=cfg["server"]["host"], port=cfg["server"]["port"], log_level="warning")

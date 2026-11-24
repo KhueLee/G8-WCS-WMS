@@ -1,0 +1,92 @@
+{
+  "warehouses": [
+    {
+      "code": "A",
+      "name": "Kho A",
+      "prefixes": [
+        "A"
+      ],
+      "wh_code": "WH_TB",
+      "robot": 1,
+      "store": false,
+      "active": true
+    },
+    {
+      "code": "B",
+      "name": "Kho B",
+      "prefixes": [
+        "B"
+      ],
+      "wh_code": "WH_TB",
+      "robot": 1,
+      "store": false,
+      "active": true
+    },
+    {
+      "code": "C",
+      "name": "Kho thành phẩm",
+      "prefixes": [
+        "C"
+      ],
+      "wh_code": "WH_TB",
+      "robot": 1,
+      "store": true,
+      "active": true
+    },
+    {
+      "code": "D",
+      "name": "Kho 2500",
+      "prefixes": [
+        "D"
+      ],
+      "wh_code": "WH_TB",
+      "robot": 1,
+      "store": false,
+      "active": true
+    },
+    {
+      "code": "E",
+      "name": "Kho E",
+      "prefixes": [
+        "E"
+      ],
+      "wh_code": "WH_TB",
+      "robot": 1,
+      "store": false,
+      "active": true
+    },
+    {
+      "code": "S",
+      "name": "Kho S",
+      "prefixes": [
+        "S"
+      ],
+      "wh_code": "WH_TB",
+      "robot": 1,
+      "store": false,
+      "active": true
+    },
+    {
+      "code": "S02",
+      "name": "Kho lắp ráp LED trụ",
+      "prefixes": [
+        "S02"
+      ],
+      "wh_code": "WH_TB",
+      "robot": 1,
+      "store": false,
+      "active": true
+    },
+    {
+      "code": "T",
+      "name": "Kho T",
+      "prefixes": [
+        "T"
+      ],
+      "wh_code": "WH_TB",
+      "robot": 1,
+      "store": false,
+      "active": true
+    }
+  ]
+}

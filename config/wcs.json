@@ -4,7 +4,7 @@
     "port": 9000
   },
   "mongo": {
-    "uri": "mongodb://127.0.0.1:27017",
+    "uri": "mongodb://127.0.0.1:27018",
     "db": "g8b_wcs"
   },
   "wms": {
@@ -37,10 +37,12 @@
       14
     ],
     "priority_high": 4,
-    "priority_normal": 6
+    "priority_normal": 6,
+    "path_by": "code"
   },
   "locations": {
-    "file": "config/locations.json",
+    "file": "config/locations.xlsx",
+    "warehouses": "config/warehouses.json",
     "check": true
   },
   "identify_lines": [

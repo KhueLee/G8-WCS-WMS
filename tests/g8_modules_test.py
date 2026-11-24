@@ -68,9 +68,9 @@ def wait_http(url, timeout=60):
 @E.scenario
 def m01_g8_export_real_app():
     d = ARGS.export
-    MongoClient().drop_database("e2e_G8_EXPORT")
+    MongoClient(E.MONGO).drop_database("e2e_G8_EXPORT")
     st = os.path.join(E.TMP, "g8export_settings.json")
-    json.dump({"mongo_db": "e2e_G8_EXPORT", "ui_port": 8080, "open_browser": False, "data_dir": os.path.join(E.TMP, "g8x")},
+    json.dump({"mongo_uri": E.MONGO, "mongo_db": "e2e_G8_EXPORT", "ui_port": 8080, "open_browser": False, "data_dir": os.path.join(E.TMP, "g8x")},
               open(st, "w"))
     spawn([E.PY, "-m", "app.main"], d, {"G8_SETTINGS": st}, "g8export")
     wait_http(EXP_UI + "/api/config")
@@ -122,11 +122,11 @@ def m02_g8_id_real_app_manual():
     json.dump({"mode": "MANUAL"}, open(os.path.join(run, "data", "mode.json"), "w"))
     cfg = json.load(open(os.path.join(run, "config.json"), encoding="utf-8"))
     cfg["ui"]["open_browser"] = False
-    cfg["mongo"].update(start_bundled=False, db="e2e_g8id", db_manual="e2e_g8id_manual")
+    cfg["mongo"].update(uri=E.MONGO, start_bundled=False, db="e2e_g8id", db_manual="e2e_g8id_manual")
     cfg["pallet_done_trigger"] = "auto"
     json.dump(cfg, open(os.path.join(run, "config.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=1)
     for db in ("e2e_g8id", "e2e_g8id_manual"):
-        MongoClient().drop_database(db)
+        MongoClient(E.MONGO).drop_database(db)
     spawn([E.PY, "-m", "app.main"], run, {}, "g8id")
     wait_http(ID_UI + "/api/mode")
     mode = http.get(ID_UI + "/api/mode").json()
@@ -143,7 +143,9 @@ def m02_g8_id_real_app_manual():
     http.post(ID_SIM + "/sim/set", json={"auto": True, "auto_identify": True, "carton_weight": 1637})
     time.sleep(5)  # chờ G8-ID nối các thiết bị giả (cân, đầu đọc, máy in) của công cụ mô phỏng
 
-    r = E.post("wms", "/api/identify", {"kind": "PO", "line_id": "MCSX010", "pallets": 2, "cartons": 2, "gw": 1.637})
+    E.post("wms", "/api/products", {"item_code": "TEST_2", "item_name": "SP test 2 thùng/pallet", "inner_carton": 6,
+                                    "inner_pallet": 2, "gw": 1.637})
+    r = E.idf("PO", 4, item="TEST_2", line="MCSX010")
     po = r["po_id"]
     E.until(lambda: sum(1 for o in E.get("wcs", "/api/outbox") if o["key"].startswith("ids-order:") and str(po) in o["key"]
                         and o["status"] == "DONE") == 2, timeout=30, what="G8-ID nhận 2 orderTask (1000 SUCCESS)")
@@ -175,7 +177,7 @@ def main():
     ap.add_argument("--id", default="")
     ARGS = ap.parse_args()
     for db in (E.DB_WCS, E.DB_WMS):
-        MongoClient().drop_database(db)
+        MongoClient(E.MONGO).drop_database(db)
     E.write_cfg()
     add_lines()
     try:

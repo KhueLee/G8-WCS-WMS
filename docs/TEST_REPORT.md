@@ -1,8 +1,11 @@
-# Báo cáo test – G8 luồng B v0.2.0 (24/11/2026)
+# Báo cáo test – G8 luồng B v0.5.0 (25/11/2026)
 
 **Máy test:** Windows 11, Python 3.13, MongoDB 4.4.29 (mongod kèm theo).
 **Kết quả lượt cuối:**
-- v0.2.0: **19/19 PASS** (17 kịch bản đầu cuối + 2 với phần mềm trạm thật).
+- v0.5.0: **23/23 PASS** (21 kịch bản đầu cuối + 2 với phần mềm trạm thật).
+- v0.4.0: 22/22 PASS (20 kịch bản đầu cuối + 2 với phần mềm trạm thật).
+- v0.3.0: 20/20 PASS (18 kịch bản đầu cuối + 2 với phần mềm trạm thật), MongoDB của B ở cổng 27018.
+- v0.2.0: 19/19 PASS.
 - v0.1.0: 16/16 PASS.
 
 ## 1. Test đầu cuối với simulator của B (`run_tests.bat` → `tests/e2e_test.py`)
@@ -31,6 +34,10 @@ Hệ thống được dựng trên cổng và DB riêng (`e2e_*`):
 | s15 | Move tay trên WCS B (2 bước) + bản tin WMS dán tay | Robot chạy xong, `reported = MANUAL`, không sinh bản tin WMS; thiếu pallet thì báo lỗi | PASS |
 | s16 | Sửa cấu hình qua web | Thêm line → có trong DB và file, `poll_s` áp dụng ngay; URL sai bị từ chối; xoá line; WMS thêm điểm sàn (tự chuẩn hoá mã); lưu lại danh sách vị trí | PASS |
 | s17 | Dashboard | `/api/dashboard` của WCS và WMS: 24 cột theo giờ, ô số liệu khớp, zone B đủ 20 ô; trang và file tĩnh trả 200 | PASS |
+| s18 | Danh sách vị trí form highbay | Đọc file 14 cột (Node, toạ độ); sửa Node 1 ô; thêm dải S05-1..3 × 2 tầng với Node 500 / 502 / 504; WMS tự nạp lại (26 ô); mã sai bị từ chối; không xoá được ô đang có hàng; xoá 2 ô; Xuất Excel có Sheet0 đúng 14 cột + sheet TrangThai; tải lại chính file đã xuất giữ nguyên 24 ô; file .txt bị từ chối | PASS |
+| s19 | Nạp file RAW (bố cục "2500 RAW") | 139 điểm S02 / C24 / C25 / D32; xem trước đếm theo kho (C 80, D 40, kho mới); chọn S02 tất cả + C 50 → 69 điểm; diff báo S02-259-2 bị xoá kèm pallet LPN-CASCADE; áp dụng tạo kho C, D; pallet bị xoá theo; WCS tự nạp lại danh sách mới | PASS |
+| s20 | Danh mục + 4 loại lệnh WMS + sửa tay | Sản phẩm sai quy cách bị từ chối; định danh 7 thùng / quy cách 5 → 2 pallet (5 + 2), giữ ô kho C, robot cất; luân chuyển bằng robot; cập nhật vị trí tay (không gửi WCS), không đè ô có pallet khác; khoá / làm trống ô; tạo / sửa / xoá pallet tay; xuất 3 thùng; tồn kho C còn 4 thùng; không xoá sản phẩm còn tồn | PASS |
+| s21 | Site giao diện chung :9200 | Trang chính có logo + nút hướng dẫn; chuyển tiếp GET / POST / file Excel tới WMS và WCS; xuất RAW đúng bố cục (Sheet1, mã cột K, rack G, cột H, tầng I) và đọc lại được; trang "/" của 2 app trả 307 về site; `/huong-dan` trả PDF; tắt WCS thì site trả 502 kèm thông báo | PASS |
 | s14 | Hai task cùng ô đích | Task 2 chờ khi ô đang BUSY; ô FULL → task 2 FAILED (ô kệ phải trống) | PASS |
 
 ## 2. Test với phần mềm trạm G8 thật (`tests/g8_modules_test.py`)

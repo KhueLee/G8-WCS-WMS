@@ -1,4 +1,4 @@
-# G8 luồng B – Spec WMS ảo + WCS B (v0.2.0, 24/11/2026)
+# G8 luồng B – Spec WMS ảo + WCS B (v0.5.0, 25/11/2026)
 
 Tài liệu mô tả đúng hành vi của mã nguồn trong repo này (`g8b/`). Các quyết định đã chốt với Lee: `TODO.md`.
 
@@ -20,12 +20,13 @@ Tài liệu mô tả đúng hành vi của mã nguồn trong repo này (`g8b/`).
 
 | Thành phần | Lệnh | Cổng mặc định | Giao diện |
 |---|---|---|---|
-| WCS B | `run_wcs.bat` → `python -m g8b.wcs` | 9000 | `http://<máy>:9000` |
-| WMS ảo | `run_wms.bat` → `python -m g8b.wms` | 9100 | `http://<máy>:9100` |
+| **Site giao diện chung** | `run_web.bat` → `python -m g8b.web` | **9200** | `http://<máy>:9200` (một trang cho cả WMS ảo và WCS B) |
+| WCS B | `run_wcs.bat` → `python -m g8b.wcs` | 9000 | `/` chuyển về site :9200 |
+| WMS ảo | `run_wms.bat` → `python -m g8b.wms` | 9100 | `/` chuyển về site :9200 |
 | RCS giả | `python -m g8b.sim rcs` | 7100 | `/` (trạng thái) |
 | Bàn định danh giả | `python -m g8b.sim ids` | 9501 | `/` |
 | Băng tải xuất giả | `python -m g8b.sim scs` | 9701 | `/` |
-| MongoDB | `start_mongodb.bat` (mongod 4.4 kèm theo) | 27017, chỉ 127.0.0.1 | – |
+| MongoDB | `start_mongodb.bat` (mongod 4.4 kèm theo) | **27018** (tách khỏi Mongo 27017 của WCS gốc / G8-ID), chỉ 127.0.0.1 | – |
 
 Cổng của B không trùng với WCS gốc (8040, 8060, 8090, 8088) hay trạm (8500, 8600, 8700, 8080).
 
@@ -165,6 +166,11 @@ Line đang tắt thì WCS B từ chối lệnh mới (201). Lệnh cho line khô
 
 ## 9. Giao diện web và cấu hình
 
+- **Một site chung** (`g8b/web.py`, cổng 9200, cấu hình `config/web.json`): phục vụ giao diện và chuyển tiếp API `/wms/...` → WMS ảo, `/wcs/...` → WCS B (2 app có thể ở 2 máy). App tắt thì site trả 502 kèm thông báo; trang "/" của 2 app chuyển về site.
+- **Cột trái**: logo G8 HOME, nút **Hướng dẫn sử dụng (PDF)** (mở `/huong-dan` = `docs/HUONG_DAN_SU_DUNG.pdf`), các **nhóm lớn**: Tổng quan, Đặt lệnh, Theo dõi kho (WMS), Robot & trạm (WCS), Danh mục, Hệ thống. Bấm nhóm để sổ / thu chức năng con (nhớ trạng thái); nhãn WMS / WCS cho biết chức năng thuộc app nào; dưới menu là trạng thái WMS / WCS / RCS. Mở thẳng một trang: `/#w_new_id`, `/#c_moves`…
+- **Hộp thoại lựa chọn** thay cho gõ lệnh: bấm ô kệ → hiện thông tin ô và các nút theo trạng thái (Khoá ô, Mở khoá, Làm trống ô, Đặt pallet vào ô…); sửa pallet → chọn trạng thái / vị trí từ danh sách; hủy / xoá / chạy lại / bật tắt line đều hỏi lại kèm hậu quả.
+- **Hướng dẫn sử dụng**: `tools/build_guide.py` chụp các trang thật của site (nền sáng, `?theme=light`) và in `docs/HUONG_DAN_SU_DUNG.pdf` bằng Edge; chạy lại khi giao diện đổi.
+
 - **Bố cục:** tab ở cột trái. Màn hình hẹp (< 760 px) thì tab chuyển lên đầu trang.
 - **Dashboard:**
   - Ô số liệu chính, trạng thái RCS / WMS (biểu tượng kèm chữ).
@@ -180,13 +186,43 @@ Line đang tắt thì WCS B từ chối lệnh mới (201). Lệnh cho line khô
   - Kiểm tra dữ liệu trước khi lưu (URL http, line_id không trùng, không xoá line đang có lệnh chạy).
   - Ghi `config/*.json` (giữ `.bak`), áp dụng ngay: thêm / xoá / bật / tắt line, đổi RCS / WMS (token lấy lại), chu kỳ gửi lại.
   - Cổng và MongoDB thì sửa file rồi chạy lại.
-- **Vị trí:**
-  - `GET/PUT /api/locations/def` sửa danh sách zone / dải ô (`S02:250-259:1-2`).
-  - `POST /api/locations/upload` tải Excel (cột `Location Code`, tuỳ chọn `Zone`), CSV hoặc JSON. Nạp lại không làm mất trạng thái ô đang có.
+- **Danh sách vị trí – form highbay RCS:**
+  - File `config/locations.xlsx`, đúng 14 cột của file "Area_G8_NVL_SLAM_High Location.xlsx": Area Name, Location Code, Node, Storage Carrier Model, Location length / width, Location Coordinates, orientation, layer, Fork lifting height, Business type, High level storage model, Level Height, Self regulating fork teeth.
+  - Nạp vào được cả form 14 cột lẫn **bố cục RAW** ("2500 RAW.xlsx": không tiêu đề; Node cột D, Rack G, Cột H, Tầng I, Mã K, Level Height M, Toạ độ O). File openpyxl đọc sai kích thước sheet (vd. file 16/11) tự đọc lại ở chế độ thường.
+  - WMS ảo và WCS B **dùng chung một file** và tự nạp lại khi file đổi (kiểm tra mỗi 5 s).
+  - Điểm sàn (bàn định danh / băng tải) lấy từ cấu hình line, không nằm trong file.
+  - API (cả hai app):
+    - `GET /api/locations/info`, `GET /api/locations/search?q=&wh=&page=`;
+    - `POST /api/locations/row` (thêm / sửa, đổi mã), `POST /api/locations/delete`;
+    - `POST /api/locations/bulk` (dải Rack-Cột-Tầng, Node tăng dần), `POST /api/locations/reload`;
+    - `GET /api/locations/export?fmt=raw` (mặc định): **bố cục RAW** như "2500 RAW.xlsx" (Sheet1 không tiêu đề: D Node, G Rack, H Cột, I Tầng, K Mã, M Level Height, O Toạ độ); `fmt=14`: form 14 cột RCS (Sheet0). Cả hai kèm sheet `TrangThai` (kho, trạng thái ô, pallet) và nạp lại được;
+    - **Nạp file mới:** `POST /api/locations/import/preview` (đọc file, đếm điểm theo kho) → `import/diff` (chọn kho + số điểm tối đa, xem thêm / xoá / ô có hàng bị xoá) → `import/apply`.
+  - Khi áp dụng: điểm mới được thêm; **điểm không còn bị xoá kèm pallet gán ở điểm đó** (WMS xoá pallet đang nằm ở đó, bỏ giữ chỗ của pallet chưa cất). Riêng ô robot đang chở tới (BUSY) được giữ lại tới lần nạp sau.
+  - Xoá một điểm bằng tay cũng xoá pallet ở điểm đó (giao diện hỏi lại trước khi xoá).
+  - Lưu file luôn giữ bản `.bak`. Nạp lại không làm mất trạng thái ô còn trong file.
+  - `rcs.path_by`: `code` (mặc định, tên điểm RCS = mã vị trí) hoặc `node` (gửi Node trong file highbay).
+- **Kho (ghép điểm theo tiền tố)** – `config/warehouses.json`, dùng chung; sửa ở WMS ảo (`GET/PUT /api/warehouses`), WCS B chỉ xem:
+  - Mỗi kho: mã, tên, các tiền tố điểm, WH_Code gửi trong bản tin TKELog, robot mặc định (1 nâng hạ / 2 đội gầm), "cất TP" (kho mặc định cất pallet định danh xong), dùng / ngừng.
+  - Một điểm thuộc kho có tiền tố khớp **dài nhất** (S02-… vào kho S02 trước kho S).
+  - Nạp file thì **tạo đủ kho cho mọi tiền tố trong file**: nhóm theo chữ cái đầu (A, B, C, D, E, S, T), riêng S02 tách kho; tên có sẵn: C = Kho thành phẩm, S02 = Kho lắp ráp LED trụ, D = Kho 2500.
+  - Hiện quản lý **100 điểm**: 50 điểm S02 và 50 điểm C, lấy từ file "Area_G8_NVL_SLAM_High Location_20261116.xlsx" (5.782 điểm).
+
+## 9b. WMS ảo – danh mục và lệnh
+
+- **Sản phẩm** (`/api/products`): mã, tên, nhóm, quy cách thùng (chiếc/thùng), quy cách pallet (thùng/pallet), GW / NW kg/thùng, dùng / ngừng. Không xoá được sản phẩm còn tồn.
+- **Lệnh định danh** (`POST /api/identify`, đi đôi với lệnh sản xuất – B không theo dõi sản xuất nên tạo thẳng lệnh định danh):
+  - Chọn PO (thành phẩm) / ASN (thương mại), line, sản phẩm, số thùng kế hoạch, NSX, kho cất. Tên lệnh tự sinh `VAS-ddmmyy-n` (đánh số lại mỗi ngày như TKELog).
+  - WMS chia pallet theo quy cách pallet (pallet cuối lẻ), sinh mã thùng `ITEM|||||||<chiếc/thùng>|0|<mã>||001||||||||<stt>`, giữ chỗ ô trống trong kho cất, gửi WCS.
+  - Pallet định danh xong (`Finished_Goods`): trả vị trí cất, gọi robot cất (Type_Move 3, robot theo kho). Trạm chốt pallet thiếu thùng (hủy giữa chừng) thì chỉ giữ số thùng thực đạt.
+- **Luân chuyển pallet** (`POST /api/move`): pallet đang trong kho → ô trống, robot theo kho đích (chọn lại được), Type_Move theo danh sách TKELog.
+- **Xuất hàng** (`POST /api/export`): chọn pallet trong kho + số thùng cần xuất → DO.
+- **Cập nhật vị trí** (`POST /api/update_location`): sửa tay vị trí pallet (dời bằng tay / kiểm kê), không gửi WCS; ghi thành lệnh `UPDATE_LOC`.
+- **Sửa tay:** tạo pallet tay (hàng có sẵn, WMS sinh mã thùng), sửa trạng thái / vị trí, xoá pallet (nhả ô); khoá / mở khoá / làm trống ô (`POST /api/locations/set`).
+- **Tồn kho** (`GET /api/inventory`): theo kho × sản phẩm (số pallet, số thùng còn).
 
 ## 10. Kiểm thử
 
-- `run_tests.bat` (`tests/e2e_test.py`) chạy 17 kịch bản đầu cuối trên cổng và DB riêng:
+- `run_tests.bat` (`tests/e2e_test.py`) chạy 21 kịch bản đầu cuối trên cổng và DB riêng:
   1. Move nhóm 2 bước.
   2. RCS báo lỗi → SKIPPED → chạy lại.
   3. Vị trí sai / robot sai.
@@ -204,11 +240,17 @@ Line đang tắt thì WCS B từ chối lệnh mới (201). Lệnh cho line khô
   15. Move tay / bản tin thô.
   16. Sửa cấu hình qua web.
   17. Dashboard.
+  18. Danh sách vị trí highbay.
+  19. Nạp file RAW, chọn kho / số điểm, xoá kéo theo pallet.
+  20. Danh mục sản phẩm, 4 loại lệnh WMS, sửa tay pallet / ô.
+  21. Site giao diện chung (chuyển tiếp API, xuất RAW, hướng dẫn PDF, báo lỗi khi app tắt).
 - `tests/g8_modules_test.py` test với phần mềm trạm thật ở chế độ mô phỏng (G8-Export, G8-ID). Kết quả ghi ở `docs/TEST_REPORT.md`.
 
 ## 11. Chưa làm / còn mở
 
-- Đổi đích task đang chạy (`questionLocationNew` + `updateOrderPointInfo`), API 6 (ASN confirm PDA), API 9 (đóng lệnh SX). WCS gốc cũng chưa có hai API này.
+- Đổi đích task đang chạy (`questionLocationNew` → `Location_Stocks` + RCS `updateOrderPointInfo`): WCS gốc đã có `questionLocationNew` (chưa gọi `updateOrderPointInfo`), luồng B chưa làm.
+- API 6 "Hoàn tất in QRCODE (confirm)" (PDA quét pallet rồi cất): WCS gốc để comment, luồng B chưa làm.
+- API 9 "Đóng lệnh sản xuất" (3.4.3, WMS → WCS): WCS gốc gắn vào `/identify-service/wms/task/identify-cartons/cancel` (cùng endpoint hủy định danh); luồng B cũng nhận endpoint này. Cần TKSolution xác nhận đóng lệnh và hủy lệnh có tách riêng không.
 - Đăng nhập cho giao diện web: hiện mở trong LAN, giống các tool G8 khác.
 - Cần thử ở hiện trường:
   - RCS gửi callback tới một hay nhiều URL.
