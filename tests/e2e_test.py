@@ -327,6 +327,61 @@ def s14_dest_busy_waits():
     until(lambda: get("wcs", "/api/moves/1/1_MovePallet_busyB")["status"] == "FAILED", what="task B không vào ô đầy")
 
 
+@scenario
+def s15_manual_move_and_raw_order():
+    """Move đặt tay trên WCS B: chạy robot, không báo WMS. Bản tin WMS dán tay chạy như WMS gọi vào."""
+    r = post("wcs", "/api/order/move", {"pallet_id": "LPN-M15", "type_robot": 1,
+                                        "steps": [{"from": "BDD09", "to": "S02-259-1"}, {"from": "S02-259-1", "to": "S02-259-2"}]})
+    assert r["ok"] and len(r["task_ids"]) == 2, r
+    until(lambda: all(get("wcs", "/api/moves/" + t)["status"] == "SUCCEEDED" for t in r["task_ids"]), what="Move tay xong")
+    until(lambda: all(get("wcs", "/api/moves/" + t)["reported"] == "MANUAL" for t in r["task_ids"]), what="không báo WMS")
+    assert not [m for m in get("wcs", "/api/outbox") if "MANUAL" in m["key"]], "Move tay không được tạo bản tin WMS"
+    bad = post("wcs", "/api/order/move", {"pallet_id": "", "steps": []})
+    assert not bad["ok"]
+    raw = post("wcs", "/api/order/raw", {"kind": "cancel", "body": {"PO_ID": 123}})
+    assert raw["ok"], raw
+
+
+@scenario
+def s16_config_on_web():
+    """Sửa cấu hình qua API giao diện: thêm line, áp dụng ngay, từ chối dữ liệu sai, xoá line."""
+    cfg = get("wcs", "/api/config")["config"]
+    cfg2 = json.loads(json.dumps(cfg))
+    cfg2["export_lines"].append({"line_id": "BCXB099", "url": "http://127.0.0.1:1/scs", "location": "BCXB01", "enabled": False})
+    cfg2["rcs"]["poll_s"] = 0.8
+    r = http.put(U["wcs"] + "/api/config", json=cfg2).json()
+    assert r["ok"], r
+    lines = {x["line_id"]: x for x in get("wcs", "/api/lines")}
+    assert "BCXB099" in lines and lines["BCXB099"]["enabled"] is False
+    assert get("wcs", "/api/config")["config"]["rcs"]["poll_s"] == 0.8
+    saved = json.load(open(os.path.join(TMP, "wcs.json"), encoding="utf-8"))
+    assert any(x["line_id"] == "BCXB099" for x in saved["export_lines"]), "phải ghi xuống file cấu hình"
+    bad = json.loads(json.dumps(cfg2))
+    bad["rcs"]["url"] = "ftp://x"
+    assert http.put(U["wcs"] + "/api/config", json=bad).json()["ok"] is False
+    assert http.put(U["wcs"] + "/api/config", json=cfg).json()["ok"]
+    assert "BCXB099" not in {x["line_id"] for x in get("wcs", "/api/lines")}, "xoá line khỏi cấu hình"
+    s = get("wms", "/api/settings")["config"]
+    s2 = json.loads(json.dumps(s))
+    s2["stations"]["MCSX099"] = "bdd09"
+    assert http.put(U["wms"] + "/api/settings", json=s2).json()["ok"]
+    assert get("wms", "/api/config")["stations"]["MCSX099"] == "BDD09"
+    assert http.put(U["wms"] + "/api/settings", json=s).json()["ok"]
+    d = get("wcs", "/api/locations/def")
+    assert d["editable"] and http.put(U["wcs"] + "/api/locations/def", json=d["def"]).json()["ok"]
+
+
+@scenario
+def s17_dashboards():
+    d = get("wcs", "/api/dashboard")
+    assert d["tiles"]["move_done_today"] >= 1 and len(d["hourly_moves"]) == 24 and "B" in d["occupancy"], d["tiles"]
+    assert sum(d["hourly_moves"]) >= d["tiles"]["move_done_today"]
+    w = get("wms", "/api/dashboard")
+    assert w["tiles"]["orders_today"] >= 1 and len(w["hourly_orders"]) == 24 and w["tiles"]["zone_total"] == 20, w["tiles"]
+    for port, path in ((P["wcs"], "/"), (P["wms"], "/"), (P["wcs"], "/static/common.js")):
+        assert http.get(f"http://127.0.0.1:{port}{path}").status_code == 200
+
+
 def main():
     sys.stdout.reconfigure(encoding="utf-8")
     for db in (DB_WCS, DB_WMS):
@@ -339,7 +394,8 @@ def main():
                    s04_duplicate_task_id, s05_identify_po_full_flow, s06_identify_asn, s07_identify_cancel,
                    s08_export_do, s09_wms_outage_retry, s10_line_not_owned_and_cutover,
                    s11_foreign_rcs_callback_ignored, s12_restart_wcs_mid_task_polling_only,
-                   s13_restart_wms_outbox_survives, s14_dest_busy_waits):
+                   s13_restart_wms_outbox_survives, s14_dest_busy_waits, s15_manual_move_and_raw_order,
+                   s16_config_on_web, s17_dashboards):
             fn()
     finally:
         for n in list(procs):

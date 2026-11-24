@@ -1,7 +1,9 @@
-# Báo cáo test – G8 luồng B v0.1.0 (24/11/2026)
+# Báo cáo test – G8 luồng B v0.2.0 (24/11/2026)
 
 **Máy test:** Windows 11, Python 3.13, MongoDB 4.4.29 (mongod kèm theo).
-**Kết quả lượt cuối:** **16/16 PASS** (`logs/e2e/final_run.txt`).
+**Kết quả lượt cuối:**
+- v0.2.0: **19/19 PASS** (17 kịch bản đầu cuối + 2 với phần mềm trạm thật).
+- v0.1.0: 16/16 PASS.
 
 ## 1. Test đầu cuối với simulator của B (`run_tests.bat` → `tests/e2e_test.py`)
 
@@ -26,6 +28,9 @@ Hệ thống được dựng trên cổng và DB riêng (`e2e_*`):
 | s11 | Callback RCS của luồng A (`…MovePallet…`) và orderId lạ | Trả 1000, không ảnh hưởng task của B | PASS |
 | s12 | **Tắt RCS callback**, tắt WCS B khi task đang chạy, RCS xong trong lúc WCS tắt | WCS khởi động lại, hỏi `getTaskOrderStatus`, báo WMS `success` | PASS |
 | s13 | Tắt WMS ảo khi task đang chạy | Task xong, chưa báo được; WMS lên lại → outbox gửi bù | PASS |
+| s15 | Move tay trên WCS B (2 bước) + bản tin WMS dán tay | Robot chạy xong, `reported = MANUAL`, không sinh bản tin WMS; thiếu pallet thì báo lỗi | PASS |
+| s16 | Sửa cấu hình qua web | Thêm line → có trong DB và file, `poll_s` áp dụng ngay; URL sai bị từ chối; xoá line; WMS thêm điểm sàn (tự chuẩn hoá mã); lưu lại danh sách vị trí | PASS |
+| s17 | Dashboard | `/api/dashboard` của WCS và WMS: 24 cột theo giờ, ô số liệu khớp, zone B đủ 20 ô; trang và file tĩnh trả 200 | PASS |
 | s14 | Hai task cùng ô đích | Task 2 chờ khi ô đang BUSY; ô FULL → task 2 FAILED (ô kệ phải trống) | PASS |
 
 ## 2. Test với phần mềm trạm G8 thật (`tests/g8_modules_test.py`)
@@ -43,6 +48,8 @@ Bản chạy thử dùng WCS B :9000, WMS ảo :9100, RCS giả :7100, bàn đ�
 - Gửi 1 PO (2 pallet × 4 thùng) → định danh xong, robot giả cất 2 pallet vào S02-250-1 / S02-250-2.
 - Xuất 3 thùng → DO `COMPLETED`.
 - Giao diện cả hai app mở được, hiển thị đúng; đã chụp bằng Edge headless.
+
+Giao diện v0.2.0 đã chụp bằng Edge headless ở các trang Dashboard, Cấu hình, Đặt lệnh, Xuất DO, ở độ rộng 1500 px và 600 px. Không bị tràn ngang, không chồng chữ.
 
 ## 4. Phát hiện khi test
 

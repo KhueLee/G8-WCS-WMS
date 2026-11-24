@@ -6,3 +6,4 @@ logs/
 .idea/
 main.py
 config/*.local.json
+config/*.bak

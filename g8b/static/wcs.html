@@ -2,40 +2,102 @@
 <html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>G8 WCS B</title><link rel="stylesheet" href="/static/style.css"></head>
 <body>
-<header><h1>G8 WCS B – giám sát</h1><div id="stat"></div></header>
-<nav id="tabs"></nav><main id="main"></main><div id="toast"></div>
+<div class="app">
+  <aside><h1>G8 WCS B</h1><div class="ver" id="ver"></div><nav id="tabs"></nav><div class="conn" id="conn"></div></aside>
+  <main id="main"></main>
+</div>
+<div id="toast"></div>
 <script src="/static/common.js"></script>
 <script>
+initTip();
 async function stat() {
   const s = await api('/api/status');
-  const f = o => Object.entries(o || {}).map(([k, v]) => `${k}:<b>${v}</b>`).join(' ');
-  $('#stat').innerHTML = `v${s.version} · RCS ${s.rcs_ok === null ? '?' : s.rcs_ok ? badge('OK') : badge('ERROR')}
-    · Move ${f(s.moves)} · Định danh ${f(s.identify)} · Xuất ${f(s.export)} · Outbox ${f(s.outbox)} · Cảnh báo 24h <b>${s.alerts}</b>`;
+  $('#ver').textContent = 'v' + s.version + ' · từ ' + s.started_at;
+  $('#conn').innerHTML = `RCS ${status(s.rcs_ok)}`;
 }
-setInterval(stat, 3000); stat();
+setInterval(stat, 5000); stat();
 
 async function act(action, task_id) {
   if (!confirm(`${action} task ${task_id}?`)) return;
-  const r = await api('/api/moves/action', {action, task_id}); toast(r, !r.ok); render();
+  done(await api('/api/moves/action', {action, task_id})); render();
 }
 async function lineEnable(line_id, enabled) {
   if (!confirm(`${enabled ? 'BẬT' : 'TẮT'} line ${line_id} trên WCS B?`)) return;
-  toast(await api('/api/lines/enable', {line_id, enabled})); render();
+  done(await api('/api/lines/enable', {line_id, enabled})); render();
 }
 async function locSet(code) {
   const st = prompt(`Trạng thái mới cho ô ${code} (EMPTY / FULL / LOCKED):`, 'LOCKED'); if (!st) return;
-  toast(await api('/api/locations/set', {code, state: st.toUpperCase()})); render();
+  done(await api('/api/locations/set', {code, state: st.toUpperCase()})); render();
 }
-async function obRetry(key) { toast(await api('/api/outbox/retry', {key})); render(); }
-async function doClose(do_id) { if (confirm('Đóng tay DO ' + do_id + '?')) { toast(await api('/api/export/close', {do_id})); render(); } }
+async function obRetry(key) { done(await api('/api/outbox/retry', {key})); render(); }
+async function doClose(do_id) { if (confirm('Đóng tay DO ' + do_id + '?')) { done(await api('/api/export/close', {do_id})); render(); } }
 
-const render = tabs([['moves', 'Di chuyển (Move)'], ['identify', 'Định danh'], ['export', 'Xuất hàng'], ['lines', 'Trạm / Line'],
-  ['locs', 'Vị trí'], ['outbox', 'Outbox'], ['alerts', 'Cảnh báo'], ['msg', 'Bản tin']], async t => {
+// ---------------------------------------------------------------- đặt lệnh
+async function orderMove(e) {
+  e.preventDefault();
+  const f = Object.fromEntries(new FormData(e.target).entries());
+  const steps = f.steps.split(/[,\n]/).map(s => s.trim()).filter(Boolean).map(s => { const [a, b] = s.split('>').map(x => x.trim()); return {from: a, to: b}; });
+  const r = done(await api('/api/order/move', {pallet_id: f.pallet_id, type_robot: +f.type_robot, type_move: +f.type_move, steps}));
+  if (r.ok) e.target.reset();
+}
+const RAW_TPL = {
+  move: {Task_ID: '1/1_MovePallet_test001', WH_Code: 'WH_TB', Pallet_ID: 'LPN00001', Type_Robot_ID: 1, Type_Move_ID: 11, Location_Old: 'BDD09', Location_New: 'S02-250-1'},
+  identify: {PO_ID: 190999001, PO_Name: 'TEST-PO', WH_Code: 'WH_TB', Line_ID: 'MCSX009', Pallet_Current: 1, Item_Information: [{Item_Code: 'TRU_G01_50W_AT', Item_Name: 'Bóng Led trụ T50', MFG_Date: '24/11/2026', Pallet_ID: 'LPNT0001', Location: 'S02-250-1', Carton_List: ['TRU_G01_50W_AT|||||||6|0|TEST000001||001||||||||01', 'TRU_G01_50W_AT|||||||6|0|TEST000002||001||||||||01'], Ctn: 2, Qty: 12, Pcs: 0, Inner_Carton: 6, Inner_Pallet: 2, NW: 0, GW: 1.637}]},
+  import: {ASN_ID: 180999001, WH_Code: 'WH_TB', Line_ID: 'MCSX009', Item_Information: [{Item_Code: 'HANG_TM', Item_Name: 'Hàng thương mại', Pallet_ID: 'LPNT0002', Location: 'S02-251-1', Carton_List: ['HANG_TM|||||||6|0|TEST000101||001||||||||01'], Ctn: 1, Qty: 6, Inner_Carton: 6, Inner_Pallet: 1, NW: 0, GW: 1}]},
+  cancel: {PO_ID: 190999001},
+  export: {DO_ID: 170999001, WH_Code: 'WH_TB', Conveyor_Belt: 'BCXB001', Item_Information: [{STT: 1, Pallet_ID: 'LPNT0001', Item_Code: 'TRU_G01_50W_AT', Ctn: 2, Ctn_Need: 2, Carton_List: ['TRU_G01_50W_AT|||||||6|0|TEST000001||001||||||||01', 'TRU_G01_50W_AT|||||||6|0|TEST000002||001||||||||01']}]},
+};
+function rawTpl() { $('#rawbody').value = JSON.stringify(RAW_TPL[$('#rawkind').value], null, 2); }
+async function orderRaw(e) {
+  e.preventDefault();
+  let body; try { body = JSON.parse($('#rawbody').value); } catch (err) { return toast('JSON sai: ' + err.message, true); }
+  done(await api('/api/order/raw', {kind: $('#rawkind').value, body}));
+}
+
+// ---------------------------------------------------------------- cấu hình
+let CFG = null;
+async function saveCfg() {
+  const c = readFields($('#cfg'), JSON.parse(JSON.stringify(CFG.config)));
+  c.identify_lines = readTable('il'); c.export_lines = readTable('el');
+  const r = done(await api('/api/config', c, 'PUT'));
+  if (r.ok) render();
+}
+
+const render = tabs([['-', 'Tổng quan'], ['dash', 'Dashboard'],
+  ['-', 'Vận hành'], ['moves', 'Di chuyển (Move)'], ['identify', 'Định danh'], ['export', 'Xuất hàng'], ['order', 'Đặt lệnh'],
+  ['-', 'Thiết bị'], ['lines', 'Trạm / Line'], ['locs', 'Vị trí'],
+  ['-', 'Hệ thống'], ['outbox', 'Outbox'], ['alerts', 'Cảnh báo'], ['msg', 'Bản tin'], ['cfg', 'Cấu hình']], async t => {
+  if (t === 'dash') {
+    const d = await api('/api/dashboard'), k = d.tiles;
+    return `<div class="tiles">
+      ${tile('Move đang chạy', fmt(k.move_running), `${fmt(k.move_waiting)} đang chờ`)}
+      ${tile('Move xong hôm nay', fmt(k.move_done_today), `${fmt(k.move_fail_today)} lỗi / hủy / bỏ qua`)}
+      ${tile('Pallet định danh hôm nay', fmt(k.pallet_identified_today), 'đã báo WMS')}
+      ${tile('DO đang xuất', fmt(k.do_running), `${fmt(k.do_done_today)} xong hôm nay`)}
+      ${tile('Bản tin chờ gửi', fmt(k.outbox_pending), k.outbox_dead ? `<span class="st crit"><i>▲</i>${k.outbox_dead} bị từ chối</span>` : 'không có bản tin lỗi')}
+      ${tile('Cảnh báo 24h', fmt(k.alerts_24h), '')}
+      ${tile('RCS', status(d.rcs_ok), 'kết quả lần gọi gần nhất')}
+      ${tile('WMS', status(d.wms_ok, 'Kết nối', 'Đang gửi lại'), 'bản tin gần nhất')}
+    </div>
+    <div class="grid2">
+      <div class="card"><h3>Move hoàn thành theo giờ – hôm nay</h3>${hourBars(d.hourly_moves, 'move hoàn thành')}</div>
+      <div class="card"><h3>Pallet định danh theo giờ – hôm nay</h3>${hourBars(d.hourly_pallets, 'pallet')}</div>
+    </div>
+    <div class="grid2">
+      <div class="card"><h3>Ô kệ theo zone</h3>${occupancy(d.occupancy)}<div class="hint" style="margin-top:8px">Bảng chi tiết: tab Vị trí</div></div>
+      <div class="card"><h3>Trạm / Line</h3>${table(d.lines, [['Line', 'line_id'], ['Loại', 'kind'], ['Trạng thái', r => r.enabled ? status(true, 'Bật') : status(false, '', 'Tắt')],
+        ['Đang làm', 'active', 'num'], ['Gọi về lần cuối', 'last_seen']])}</div>
+    </div>
+    <div class="grid2">
+      <div class="card"><h3>Move lỗi gần đây</h3>${table(d.recent_fail, [['Giờ', 'final_at'], ['Task', 'task_id'], ['Pallet', 'pallet_id'], ['TT', r => badge(r.status)], ['Lỗi', 'error']])}</div>
+      <div class="card"><h3>Cảnh báo gần đây</h3>${table(d.alerts, [['Giờ', 't'], ['Mức', r => badge(r.level)], ['Nội dung', 'text']])}</div>
+    </div>`;
+  }
   if (t === 'moves') {
     const rows = await api('/api/moves');
     return table(rows, [['Tạo lúc', 'created_at'], ['Task_ID', 'task_id'], ['Pallet', 'pallet_id'], ['Từ', 'loc_old'], ['Đến', 'loc_new'],
       ['Robot', 'type_robot'], ['Move', 'type_move'], ['Trạng thái', r => badge(r.status)], ['orderId RCS', 'order_id'],
-      ['RCS', r => esc(r.rcs_status ?? '') + ' ' + esc(r.device || '')], ['Báo WMS', r => badge(r.reported)], ['Lần', 'attempt'],
+      ['RCS', r => esc(r.rcs_status ?? '') + ' ' + esc(r.device || '')], ['Báo WMS', r => badge(r.reported)], ['Lần', 'attempt', 'num'],
       ['Lỗi', 'error'],
       ['Thao tác', r => ['CREATED', 'DISPATCHED', 'RUNNING'].includes(r.status)
         ? `<button class=a onclick="act('cancel','${esc(r.task_id)}')">Hủy</button> <button class=a onclick="act('complete','${esc(r.task_id)}')">Xong tay</button>`
@@ -43,35 +105,80 @@ const render = tabs([['moves', 'Di chuyển (Move)'], ['identify', 'Định danh
   }
   if (t === 'identify') {
     const rows = await api('/api/identify');
-    return rows.map(o => `<h3>${esc(o.kind)} ${esc(o.po_id)} · ${esc(o.po_name)} · line ${esc(o.line_id)} · ${badge(o.status)} · ${o.pallets_done}/${o.pallets_total} pallet</h3>` +
-      table(o.pallets, [['Task_ID', 'task_id'], ['Pallet', 'pallet_id'], ['Thùng KH', 'ctn_plan'], ['Thùng đạt', 'ctn'],
-        ['Trạng thái', r => badge(r.status)], ['Vị trí WMS', 'wms_location'], ['Lỗi', 'error']])).join('') || '<div class=empty>Chưa có lệnh</div>';
+    return rows.map(o => `<div class="card"><h3>${esc(o.kind)} ${esc(o.po_id)} · ${esc(o.po_name)} · line ${esc(o.line_id)} · ${badge(o.status)} · ${o.pallets_done}/${o.pallets_total} pallet</h3>` +
+      table(o.pallets, [['Task_ID', 'task_id'], ['Pallet', 'pallet_id'], ['Thùng KH', 'ctn_plan', 'num'], ['Thùng đạt', 'ctn', 'num'],
+        ['Trạng thái', r => badge(r.status)], ['Vị trí WMS', 'wms_location'], ['Lỗi', 'error']]) + '</div>').join('') || '<div class=empty>Chưa có lệnh</div>';
   }
   if (t === 'export') {
     const rows = await api('/api/export');
     return table(rows, [['Tạo lúc', 'created_at'], ['DO', 'do_id'], ['Băng tải', 'line_id'], ['Trạng thái', r => badge(r.status)],
-      ['Pallet', r => (r.done_pallets || []).length + '/' + (r.pallets || []).length], ['Danh sách', r => esc((r.pallets || []).join(', '))],
+      ['Pallet', r => (r.done_pallets || []).length + '/' + (r.pallets || []).length, 'num'], ['Danh sách', r => esc((r.pallets || []).join(', '))],
       ['Lỗi', 'error'], ['', r => ['QUEUED', 'RUNNING'].includes(r.status) ? `<button class=a onclick="doClose(${r.do_id})">Đóng tay</button>` : '']]);
   }
+  if (t === 'order') return `
+  <div class="card"><h3>Move tay (lệnh của WCS B, không báo WMS)</h3>
+   <div class="hint">Mỗi bước dạng <code>TỪ&gt;ĐẾN</code>, nhiều bước cách nhau dấu phẩy hoặc xuống dòng – chạy tuần tự như một nhóm n/m.</div>
+   <form class="f" onsubmit="orderMove(event)">
+    <label class="fl">Pallet<input name="pallet_id" required placeholder="LPNB00001"></label>
+    <label class="fl" style="flex:1">Các bước<input name="steps" required placeholder="BDD09>S02-250-1, S02-250-1>S02-251-1" style="min-width:320px"></label>
+    <label class="fl">Robot<select name="type_robot"><option value="1">1 – xe nâng</option><option value="2">2 – đội kệ</option></select></label>
+    <label class="fl">Type_Move<input name="type_move" type="number" value="11"></label>
+    <button class="p">Đặt lệnh</button></form></div>
+  <div class="card"><h3>Gửi bản tin WMS (test)</h3>
+   <div class="hint">Chạy đúng như WMS gọi vào WCS B, có báo kết quả về WMS. Bấm "Mẫu" để có bản tin ví dụ.</div>
+   <form class="f" onsubmit="orderRaw(event)" style="flex-direction:column;align-items:stretch">
+    <div class="row"><label class="fl">Loại<select id="rawkind" onchange="rawTpl()"><option value="move">Move pallet</option><option value="identify">Định danh PO</option>
+      <option value="import">Định danh ASN</option><option value="cancel">Hủy định danh</option><option value="export">Xuất DO</option></select></label>
+      <button type="button" class="a" onclick="rawTpl()">Mẫu</button></div>
+    <textarea id="rawbody" spellcheck="false"></textarea>
+    <div><button class="p">Gửi</button></div></form></div>`;
   if (t === 'lines') {
     const rows = await api('/api/lines');
-    return '<p>Cutover: TẮT line trên WCS B = không nhận lệnh mới cho line đó (drain). Đổi URL trên trạm và config WCS gốc theo quy trình trong docs.</p>' +
+    return '<div class="card"><div class="hint">Cutover: TẮT line trên WCS B = không nhận lệnh mới cho line đó. Thêm / sửa line ở tab Cấu hình.</div>' +
       table(rows, [['Line', 'line_id'], ['Loại', 'kind'], ['Tên', 'name'], ['URL trạm', 'url'], ['Điểm sàn', 'location'],
-        ['Bật', r => badge(r.enabled)], ['DO đang chạy', 'busy_do'], ['Trạm gọi về lần cuối', 'last_seen'],
-        ['', r => `<button class=a onclick="lineEnable('${esc(r.line_id)}', ${!r.enabled})">${r.enabled ? 'Tắt' : 'Bật'}</button>`]]);
+        ['Trạng thái', r => r.enabled ? status(true, 'Bật') : status(false, '', 'Tắt')], ['DO đang chạy', 'busy_do'], ['Gọi về lần cuối', 'last_seen'],
+        ['', r => `<button class=a onclick="lineEnable('${esc(r.line_id)}', ${!r.enabled})">${r.enabled ? 'Tắt' : 'Bật'}</button>`]]) + '</div>';
   }
   if (t === 'locs') {
     const rows = await api('/api/locations');
-    return '<p>Bấm ô để đổi trạng thái (khoá / mở). BUSY = robot đang chở tới.</p><div class=grid>' + rows.map(l =>
-      `<div class="cell ${l.state}" onclick="locSet('${esc(l.code)}')" title="${esc(l.zone)} ${esc(l.task || '')}"><b>${esc(l.code)}</b><br>${badge(l.state)}<br>${esc(l.pallet_id || '')}</div>`).join('') + '</div>';
+    return '<div class="hint">Bấm ô để đổi trạng thái (khoá / mở). BUSY = robot đang chở tới. Sửa danh sách ô ở tab Cấu hình.</div><div class=grid>' + rows.map(l =>
+      `<div class="cell ${l.state}" onclick="locSet('${esc(l.code)}')" data-tip="${esc(l.zone)} · ${esc(l.state)} ${esc(l.task || '')}"><b>${esc(l.code)}</b><br>${badge(l.state)}<br>${esc(l.pallet_id || '')}</div>`).join('') + '</div>';
   }
   if (t === 'outbox') {
     const rows = await api('/api/outbox');
     return table(rows, [['Tạo', 'created_at'], ['Key', 'key'], ['Loại', 'kind'], ['Bên nhận', 'peer'], ['Trạng thái', r => badge(r.status)],
-      ['Lần', 'tries'], ['Lỗi cuối', 'last_error'], ['', r => r.status !== 'DONE' ? `<button class=a onclick="obRetry('${esc(r.key)}')">Gửi lại</button>` : '']]);
+      ['Lần', 'tries', 'num'], ['Lỗi cuối', 'last_error'], ['', r => r.status !== 'DONE' ? `<button class=a onclick="obRetry('${esc(r.key)}')">Gửi lại</button>` : '']]);
   }
   if (t === 'alerts') return table(await api('/api/alerts'), [['Giờ', 't'], ['Mức', r => badge(r.level)], ['Nội dung', 'text'], ['Tham chiếu', 'ref']]);
   if (t === 'msg') return msgTable(await api('/api/messages'));
-});
+  if (t === 'cfg') {
+    CFG = await api('/api/config');
+    const c = CFG.config, locd = await api('/api/locations/def');
+    return `<form id="cfg" onsubmit="return false"><div class="grid2">
+     <div class="card"><h3>WMS</h3><div class="row">
+      ${fld('URL WMS', 'wms.url', c.wms.url, 'str', 'style="min-width:260px"')}${fld('Tài khoản', 'wms.user', c.wms.user)}
+      ${fld('Mật khẩu', 'wms.password', c.wms.password, 'str', 'type="password"')}${fld('App_Name', 'wms.app_name', c.wms.app_name)}</div></div>
+     <div class="card"><h3>RCS (HuaRay ICS)</h3><div class="row">
+      ${fld('URL RCS', 'rcs.url', c.rcs.url, 'str', 'style="min-width:220px"')}${fld('areaId', 'rcs.area_id', c.rcs.area_id, 'num')}
+      ${fld('fromSystem', 'rcs.from_system', c.rcs.from_system)}${fld('Tiền tố orderId', 'rcs.order_prefix', c.rcs.order_prefix)}
+      ${fld('Hỏi trạng thái (s)', 'rcs.poll_s', c.rcs.poll_s, 'num')}${fld('Timeout (s)', 'rcs.timeout_s', c.rcs.timeout_s, 'num')}
+      ${fld('Cảnh báo chạy lâu (phút)', 'rcs.running_alert_min', c.rcs.running_alert_min, 'num')}
+      ${fld('Template robot 1 (xe nâng)', 'rcs.templates.1', c.rcs.templates['1'])}${fld('Template robot 2 (đội kệ)', 'rcs.templates.2', c.rcs.templates['2'])}
+      ${fld('Type_Move ưu tiên cao', 'rcs.high_priority_moves', c.rcs.high_priority_moves, 'list')}
+      ${fld('Priority cao', 'rcs.priority_high', c.rcs.priority_high, 'num')}${fld('Priority thường', 'rcs.priority_normal', c.rcs.priority_normal, 'num')}</div></div>
+    </div>
+    <div class="card"><h3>Bàn định danh (IDS)</h3><div class="hint">URL dạng http://&lt;IP trạm&gt;:8500/ids · Điểm sàn = mã vị trí nơi robot lấy pallet</div>
+     ${editTable('il', c.identify_lines, [['line_id', 'Line_ID', 'str'], ['name', 'Tên', 'str'], ['url', 'URL trạm', 'wide'], ['location', 'Điểm sàn', 'str'], ['enabled', 'Bật', 'bool']])}</div>
+    <div class="card"><h3>Băng tải xuất (SCS)</h3><div class="hint">URL dạng http://&lt;IP trạm&gt;:8700/scs</div>
+     ${editTable('el', c.export_lines, [['line_id', 'Conveyor_Belt', 'str'], ['name', 'Tên', 'str'], ['url', 'URL trạm', 'wide'], ['location', 'Điểm sàn', 'str'], ['enabled', 'Bật', 'bool']])}</div>
+    <div class="card"><h3>Khác</h3><div class="row">
+      ${fld('Kiểm tra vị trí', 'locations.check', c.locations.check, 'bool')}
+      ${fld('Gửi lại sau (s)', 'outbox.retry_s', c.outbox.retry_s, 'num')}${fld('Timeout gửi (s)', 'outbox.timeout_s', c.outbox.timeout_s, 'num')}
+      ${fld('Chu kỳ xử lý (s)', 'worker_s', c.worker_s, 'num')}${fld('Giữ bản tin (ngày)', 'messages_keep_days', c.messages_keep_days, 'num')}</div>
+      <div class="hint" style="margin-top:10px">Cổng ${CFG.server.port}, MongoDB ${esc(CFG.mongo.uri)} / ${esc(CFG.mongo.db)}: sửa trong ${esc(CFG.file)} rồi chạy lại run_wcs.bat.</div></div>
+    <div class="savebar"><button type="button" class="p" onclick="saveCfg()">Lưu và áp dụng</button><span class="hint">Ghi ${esc(CFG.file)} (giữ bản .bak), áp dụng ngay không cần khởi động lại.</span></div>
+    </form>${locationEditor(locd)}`;
+  }
+}, {after: t => { if (t === 'order') rawTpl(); }});
 </script>
 </body></html>

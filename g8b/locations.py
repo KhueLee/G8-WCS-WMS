@@ -82,3 +82,50 @@ def sync_collection(coll, rows: list[dict]) -> dict:
                               upsert=True)
         added += 1 if res.upserted_id else 0
     return {"total": len(rows), "added": added}
+
+
+def abs_path(path: str) -> str:
+    return path if os.path.isabs(path) else os.path.join(ROOT, path)
+
+
+def read_def(path: str) -> dict:
+    """Nội dung file vị trí dạng JSON để sửa trên giao diện (file Excel/CSV thì chỉ trả danh sách)."""
+    p = abs_path(path)
+    if path.lower().endswith(".json") and os.path.exists(p):
+        with open(p, encoding="utf-8-sig") as f:
+            return {"file": path, "editable": True, "def": json.load(f)}
+    return {"file": path, "editable": False, "def": None}
+
+
+def write_def(path: str, data: dict) -> int:
+    """Ghi file vị trí JSON (đọc thử bản tạm trước khi thay file thật). Trả số vị trí."""
+    if not isinstance(data, dict) or not isinstance(data.get("zones"), list):
+        raise ValueError("Cần {zones: [...]}")
+    p = abs_path(path)
+    tmp = p + ".tmp.json"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+    try:
+        n = len(load_file(tmp))
+    except Exception:
+        os.remove(tmp)
+        raise
+    os.replace(tmp, p)
+    return n
+
+
+def save_upload(name: str, raw: bytes) -> str:
+    """Lưu file Excel / CSV / JSON tải lên vào config/, trả đường dẫn tương đối; kiểm tra đọc được."""
+    base = re.sub(r"[^A-Za-z0-9_.-]+", "_", os.path.basename(name or "locations.xlsx"))
+    ext = os.path.splitext(base)[1].lower()
+    if ext not in (".xlsx", ".xlsm", ".csv", ".json"):
+        raise ValueError("Chỉ nhận .xlsx / .csv / .json")
+    rel = os.path.join("config", "upload_" + base)
+    p = abs_path(rel)
+    with open(p, "wb") as f:
+        f.write(raw)
+    rows = load_file(rel)
+    if not rows:
+        os.remove(p)
+        raise ValueError("File không có mã vị trí nào (Excel cần cột 'Location Code')")
+    return rel.replace("\\", "/")

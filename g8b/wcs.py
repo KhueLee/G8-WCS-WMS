@@ -7,6 +7,8 @@ Chạy: python -m g8b.wcs
 """
 from __future__ import annotations
 
+import base64
+import copy
 import logging
 import os
 import re
@@ -23,10 +25,11 @@ from pymongo import ASCENDING, DESCENDING, ReturnDocument
 from pymongo.errors import DuplicateKeyError
 
 from . import locations as L
-from .common import MsgLog, ROOT, ci_get, clean, http_post, load_config, mongo_db, now, setup_logging
+from .common import (MsgLog, ROOT, ci_get, clean, deep_merge, hourly, http_post, load_config, mongo_db, now,
+                     save_config, setup_logging, today_start)
 from .outbox import Outbox, accept_code
 
-VERSION = "0.1.0"
+VERSION = "0.2.0"
 
 DEFAULTS: dict = {
     "server": {"host": "0.0.0.0", "port": 9000},
@@ -238,7 +241,7 @@ class WCS:
         return ""
 
     # ================================================================== MOVE
-    def move_create(self, p: dict) -> dict:
+    def move_create(self, p: dict, manual: bool = False) -> dict:
         need = ["Task_ID", "WH_Code", "Pallet_ID", "Type_Robot_ID", "Type_Move_ID", "Location_Old", "Location_New"]
         miss = [k for k in need if ci_get(p, k) in (None, "")]
         if miss:
@@ -256,7 +259,7 @@ class WCS:
         doc = {"task_id": task_id, "group_key": gkey, "n": n, "m": total, "payload": payload,
                "pallet_id": str(ci_get(p, "Pallet_ID")), "loc_old": L.norm(ci_get(p, "Location_Old")),
                "loc_new": L.norm(ci_get(p, "Location_New")), "type_robot": ci_get(p, "Type_Robot_ID"),
-               "type_move": tm, "status": CREATED, "attempt": 0, "reported": False,
+               "type_move": tm, "status": CREATED, "attempt": 0, "reported": False, "manual": manual,
                "created_at": now(), "updated_at": now(), "history": [{"t": now(), "s": CREATED}]}
         try:
             self.moves.insert_one(doc)
@@ -288,6 +291,9 @@ class WCS:
         else:
             self.locs.update_one({"code": t["loc_new"], "task": t["task_id"]},
                                  {"$set": {"state": L.EMPTY, "task": None}})
+        if t.get("manual"):
+            self.moves.update_one({"_id": t["_id"]}, {"$set": {"reported": "MANUAL"}})
+            return  # lệnh đặt tay trên WCS B: không báo WMS
         # báo WMS - giữ nguyên payload gốc + status như WCS gốc
         data = dict(t["payload"])
         data["status"] = "success" if t["status"] == SUCCEEDED else "false"
@@ -641,6 +647,166 @@ class WCS:
         self._finish_do(do_id, "CLOSED", "Đóng tay")
         return {"ok": True}
 
+    # ================================================================== đặt lệnh tay / cấu hình / dashboard
+    def manual_move(self, b: dict) -> dict:
+        """Move đặt tay trên WCS B (không đến từ WMS, không báo WMS)."""
+        steps = b.get("steps") or [{"from": b.get("from"), "to": b.get("to")}]
+        steps = [s for s in steps if s.get("from") and s.get("to")]
+        if not steps or not b.get("pallet_id"):
+            return {"ok": False, "msg": "Cần pallet và ít nhất 1 bước từ → đến"}
+        key = f"MANUAL_{now().strftime('%Y-%m-%d__%H:%M:%S.%f')}"
+        ids = []
+        for i, st in enumerate(steps, 1):
+            tid = f"{i}/{len(steps)}_{key}"
+            r = self.move_create({"Task_ID": tid, "WH_Code": "MANUAL", "Pallet_ID": b["pallet_id"],
+                                  "Type_Robot_ID": int(b.get("type_robot", 1)),
+                                  "Type_Move_ID": int(b.get("type_move", 11)),
+                                  "Location_Old": st["from"], "Location_New": st["to"]}, manual=True)
+            if r["code"] != 200:
+                return {"ok": False, "msg": r["desc"]}
+            ids.append(tid)
+        log.info("Đặt lệnh Move tay %s", ids)
+        return {"ok": True, "task_ids": ids}
+
+    RAW = {"move": "move_pallet", "identify": "identify-cartons", "import": "identify-import",
+           "cancel": "identify-cartons/cancel", "export": "export_items"}
+
+    def raw_order(self, kind: str, body: dict) -> dict:
+        """Bản tin WMS dán tay (test): chạy đúng như WMS gọi vào."""
+        fn = {"move": self.move_create, "identify": lambda x: self.identify_create(x, "Product"),
+              "import": lambda x: self.identify_create(x, "Import"), "cancel": self.identify_cancel,
+              "export": self.export_create}.get(kind)
+        if not fn or not isinstance(body, dict):
+            return {"ok": False, "msg": "loại / body không hợp lệ"}
+        self.msg.add("IN", "UI (tay)", f"/{self.RAW[kind]}", body)
+        r = fn(body)
+        return {"ok": r.get("code") == 200, "msg": r.get("desc"), "resp": r}
+
+    EDITABLE = ("wms", "rcs", "locations", "identify_lines", "export_lines", "outbox", "worker_s",
+                "messages_keep_days")
+
+    def config_view(self) -> dict:
+        c = {k: copy.deepcopy(self.cfg[k]) for k in self.EDITABLE}
+        # trạng thái bật/tắt thật của line nằm trong DB (đổi ở tab Trạm / Line)
+        en = {x["line_id"]: x.get("enabled", True) for x in self.lines.find({}, {"line_id": 1, "enabled": 1})}
+        for key in ("identify_lines", "export_lines"):
+            for ln in c[key]:
+                ln["enabled"] = en.get(ln["line_id"], ln.get("enabled", True))
+        return {"config": c, "server": self.cfg["server"], "mongo": self.cfg["mongo"], "file": self.cfg["_path"]}
+
+    def config_save(self, new: dict) -> dict:
+        errs = []
+        lines_all = []
+        for key in ("identify_lines", "export_lines"):
+            for ln in new.get(key, []):
+                ln["line_id"] = str(ln.get("line_id", "")).strip()
+                ln["url"] = str(ln.get("url", "")).strip().rstrip("/")
+                ln["location"] = L.norm(ln.get("location", ""))
+                if not ln["line_id"] or not ln["url"].startswith("http"):
+                    errs.append(f"{key}: line cần line_id và url http://...")
+                lines_all.append(ln["line_id"])
+        if len(set(lines_all)) != len(lines_all):
+            errs.append("Trùng line_id")
+        for k in ("wms", "rcs"):
+            if not str(new.get(k, {}).get("url", "")).startswith("http"):
+                errs.append(f"{k}.url phải bắt đầu bằng http")
+        removed = {x["line_id"] for x in self.lines.find()} - set(lines_all)
+        for lid in removed:
+            busy = self.lines.find_one({"line_id": lid, "busy_do": {"$ne": None}}) or \
+                self.id_pallets.find_one({"line_id": lid, "status": {"$in": ["SENT", "IDENTIFIED"]}})
+            if busy:
+                errs.append(f"Không xoá được line {lid}: đang có lệnh chạy")
+        if errs:
+            return {"ok": False, "msg": "; ".join(errs)}
+        merged = deep_merge(self.cfg, {k: new[k] for k in self.EDITABLE if k in new})
+        for key in ("identify_lines", "export_lines"):
+            merged[key] = new.get(key, [])
+        old_loc = self.cfg["locations"].get("file")
+        self.cfg.clear()
+        self.cfg.update(merged)
+        save_config(self.cfg)
+        self.outbox.retry_s = float(self.cfg["outbox"]["retry_s"])
+        self.outbox.timeout_s = float(self.cfg["outbox"]["timeout_s"])
+        with self._token_lock:
+            self._token = None  # WMS có thể đổi tài khoản
+        for lid in removed:
+            self.lines.delete_one({"line_id": lid})
+        self._load_lines()
+        for key in ("identify_lines", "export_lines"):
+            for ln in self.cfg[key]:
+                self.lines.update_one({"line_id": ln["line_id"]},
+                                      {"$set": {"enabled": bool(ln.get("enabled", True))}})
+        if self.cfg["locations"].get("file") != old_loc:
+            self._load_locations()
+        log.info("Lưu cấu hình từ giao diện -> %s", self.cfg["_path"])
+        return {"ok": True, "msg": f"Đã lưu {self.cfg['_path']} và áp dụng"}
+
+    def locations_def(self) -> dict:
+        d = L.read_def(self.cfg["locations"].get("file", ""))
+        d["count"] = self.locs.count_documents({})
+        return d
+
+    def locations_save_def(self, data: dict) -> dict:
+        f = self.cfg["locations"].get("file", "")
+        if not f.lower().endswith(".json"):
+            f = "config/locations.json"
+            self.cfg["locations"]["file"] = f
+            save_config(self.cfg)
+        n = L.write_def(f, data)
+        self._load_locations()
+        return {"ok": True, "msg": f"Đã lưu {n} vị trí vào {f}"}
+
+    def locations_upload(self, name: str, b64: str) -> dict:
+        rel = L.save_upload(name, base64.b64decode(b64.split(",")[-1]))
+        self.cfg["locations"]["file"] = rel
+        save_config(self.cfg)
+        self._load_locations()
+        return {"ok": True, "msg": f"Đã nạp {rel}: {len(L.load_file(rel))} vị trí"}
+
+    def dashboard(self) -> dict:
+        t0 = today_start()
+        mv = self.moves
+        ob = self.db["outbox"]
+        last_wms = ob.find_one({"kind": "wms", "tries": {"$gt": 0}}, sort=[("next_at", DESCENDING)])
+        wms_ok = None if not last_wms else (last_wms["status"] == "DONE" or not last_wms.get("last_error"))
+        occ: dict = {}
+        for r in self.locs.aggregate([{"$group": {"_id": {"z": "$zone", "s": "$state"}, "n": {"$sum": 1}}}]):
+            occ.setdefault(r["_id"]["z"] or "-", {})[r["_id"]["s"]] = r["n"]
+        lines = []
+        for ln in self.lines.find().sort("line_id", ASCENDING):
+            if ln["kind"] == "IDENTIFY":
+                act = self.id_pallets.count_documents({"line_id": ln["line_id"],
+                                                       "status": {"$in": ["SENT", "IDENTIFIED"]}})
+            else:
+                act = 1 if ln.get("busy_do") else 0
+            lines.append({"line_id": ln["line_id"], "kind": ln["kind"], "name": ln.get("name", ""),
+                          "enabled": ln.get("enabled", True), "active": act, "busy_do": ln.get("busy_do"),
+                          "last_seen": ln.get("last_seen")})
+        return clean({
+            "now": now(), "rcs_ok": self.rcs_ok, "wms_ok": wms_ok,
+            "tiles": {
+                "move_running": mv.count_documents({"status": {"$in": list(ACTIVE)}}),
+                "move_waiting": mv.count_documents({"status": CREATED}),
+                "move_done_today": mv.count_documents({"status": SUCCEEDED, "final_at": {"$gte": t0}}),
+                "move_fail_today": mv.count_documents({"status": {"$in": [FAILED, CANCELLED, SKIPPED]},
+                                                       "final_at": {"$gte": t0}}),
+                "pallet_identified_today": self.id_pallets.count_documents({"status": "REPORTED",
+                                                                            "final_at": {"$gte": t0}}),
+                "do_running": self.do_orders.count_documents({"status": {"$in": ["QUEUED", "RUNNING"]}}),
+                "do_done_today": self.do_orders.count_documents({"status": "COMPLETED", "final_at": {"$gte": t0}}),
+                "outbox_pending": ob.count_documents({"status": {"$in": ["PENDING", "SENDING"]}}),
+                "outbox_dead": ob.count_documents({"status": "DEAD"}),
+                "alerts_24h": self.alerts.count_documents({"t": {"$gte": now() - timedelta(hours=24)}}),
+            },
+            "hourly_moves": hourly(mv, "final_at", {"status": SUCCEEDED}),
+            "hourly_pallets": hourly(self.id_pallets, "final_at", {"status": "REPORTED"}),
+            "occupancy": occ, "lines": lines,
+            "alerts": list(self.alerts.find().sort("t", DESCENDING).limit(6)),
+            "recent_fail": list(mv.find({"status": {"$in": [FAILED, CANCELLED, SKIPPED]}},
+                                        {"task_id": 1, "pallet_id": 1, "status": 1, "error": 1, "final_at": 1})
+                                .sort("final_at", DESCENDING).limit(5)),
+        })
+
     # ================================================================== nền
     def start(self):
         self.outbox.start()
@@ -749,6 +915,50 @@ def build_app(w: WCS) -> FastAPI:
     @app.get("/")
     def ui():
         return FileResponse(os.path.join(static, "wcs.html"))
+
+    @app.get("/api/dashboard")
+    def api_dashboard():
+        return w.dashboard()
+
+    @app.post("/api/order/move")
+    async def api_order_move(req: Request):
+        return w.manual_move(await req.json())
+
+    @app.post("/api/order/raw")
+    async def api_order_raw(req: Request):
+        b = await req.json()
+        return w.raw_order(b.get("kind", ""), b.get("body"))
+
+    @app.get("/api/config")
+    def api_config():
+        return w.config_view()
+
+    @app.put("/api/config")
+    async def api_config_save(req: Request):
+        try:
+            return w.config_save(await req.json())
+        except Exception as e:
+            log.exception("lưu cấu hình lỗi")
+            return {"ok": False, "msg": str(e)}
+
+    @app.get("/api/locations/def")
+    def api_loc_def():
+        return w.locations_def()
+
+    @app.put("/api/locations/def")
+    async def api_loc_def_save(req: Request):
+        try:
+            return w.locations_save_def(await req.json())
+        except Exception as e:
+            return {"ok": False, "msg": str(e)}
+
+    @app.post("/api/locations/upload")
+    async def api_loc_upload(req: Request):
+        b = await req.json()
+        try:
+            return w.locations_upload(b.get("name", ""), b.get("b64", ""))
+        except Exception as e:
+            return {"ok": False, "msg": str(e)}
 
     @app.get("/api/status")
     def api_status():

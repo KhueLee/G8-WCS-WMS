@@ -152,3 +152,35 @@ def ci_get(d: dict, *keys: str, default: Any = None) -> Any:
         if k.lower() in low and low[k.lower()] is not None:
             return low[k.lower()]
     return default
+
+
+def save_config(cfg: dict) -> str:
+    """Ghi cấu hình ra file của nó (giữ bản .bak trước đó). Trả đường dẫn."""
+    path = cfg["_path"]
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    data = {k: v for k, v in cfg.items() if not k.startswith("_")}
+    if os.path.exists(path):
+        try:
+            with open(path, "rb") as src, open(path + ".bak", "wb") as dst:
+                dst.write(src.read())
+        except OSError:
+            pass
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+    os.replace(tmp, path)
+    return path
+
+
+def today_start() -> datetime:
+    return now().replace(hour=0, minute=0, second=0, microsecond=0)
+
+
+def hourly(coll, field: str, match: dict) -> list[int]:
+    """Số bản ghi theo giờ (0-23) trong ngày hôm nay, theo trường thời gian `field`."""
+    q = dict(match)
+    q[field] = {"$gte": today_start()}
+    out = [0] * 24
+    for r in coll.aggregate([{"$match": q}, {"$group": {"_id": {"$hour": f"${field}"}, "n": {"$sum": 1}}}]):
+        out[int(r["_id"])] = r["n"]
+    return out

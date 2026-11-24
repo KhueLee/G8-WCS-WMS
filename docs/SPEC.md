@@ -1,4 +1,4 @@
-# G8 luồng B – Spec WMS ảo + WCS B (v0.1.0, 24/11/2026)
+# G8 luồng B – Spec WMS ảo + WCS B (v0.2.0, 24/11/2026)
 
 Tài liệu mô tả đúng hành vi của mã nguồn trong repo này (`g8b/`). Các quyết định đã chốt với Lee: `TODO.md`.
 
@@ -163,9 +163,30 @@ FAILED / CANCELLED / SKIPPED ──(Chạy lại)──► CREATED (attempt+1, o
 
 Line đang tắt thì WCS B từ chối lệnh mới (201). Lệnh cho line không có trong cấu hình cũng bị từ chối, thay vì treo `Pending` như WCS gốc.
 
-## 9. Kiểm thử
+## 9. Giao diện web và cấu hình
 
-- `run_tests.bat` (`tests/e2e_test.py`) chạy 14 kịch bản đầu cuối trên cổng và DB riêng:
+- **Bố cục:** tab ở cột trái. Màn hình hẹp (< 760 px) thì tab chuyển lên đầu trang.
+- **Dashboard:**
+  - Ô số liệu chính, trạng thái RCS / WMS (biểu tượng kèm chữ).
+  - Cột theo giờ trong ngày (di chuyển xong, pallet định danh / lệnh tạo).
+  - Độ lấp đầy ô theo zone (đầy / robot đang tới / khoá / trống).
+  - Trạm / line, lỗi và cảnh báo gần nhất. Rê chuột lên cột để xem số chính xác.
+- **Đặt lệnh trên WCS B:**
+  - Move tay `POST /api/order/move`: Task_ID `n/m_MANUAL_<giờ>`, chạy robot nhưng **không báo WMS** (`reported = MANUAL`).
+  - Gửi bản tin WMS `POST /api/order/raw` (`move | identify | import | cancel | export`): chạy y như WMS gọi vào.
+- **Đặt lệnh trên WMS ảo:** PO / ASN, Move nhiều bước, DO chọn pallet đang trong kho và số thùng cần xuất.
+- **Cấu hình:**
+  - WCS: `GET/PUT /api/config`. WMS: `GET/PUT /api/settings`.
+  - Kiểm tra dữ liệu trước khi lưu (URL http, line_id không trùng, không xoá line đang có lệnh chạy).
+  - Ghi `config/*.json` (giữ `.bak`), áp dụng ngay: thêm / xoá / bật / tắt line, đổi RCS / WMS (token lấy lại), chu kỳ gửi lại.
+  - Cổng và MongoDB thì sửa file rồi chạy lại.
+- **Vị trí:**
+  - `GET/PUT /api/locations/def` sửa danh sách zone / dải ô (`S02:250-259:1-2`).
+  - `POST /api/locations/upload` tải Excel (cột `Location Code`, tuỳ chọn `Zone`), CSV hoặc JSON. Nạp lại không làm mất trạng thái ô đang có.
+
+## 10. Kiểm thử
+
+- `run_tests.bat` (`tests/e2e_test.py`) chạy 17 kịch bản đầu cuối trên cổng và DB riêng:
   1. Move nhóm 2 bước.
   2. RCS báo lỗi → SKIPPED → chạy lại.
   3. Vị trí sai / robot sai.
@@ -180,9 +201,12 @@ Line đang tắt thì WCS B từ chối lệnh mới (201). Lệnh cho line khô
   12. Khởi động lại WCS khi task đang chạy, chỉ dùng kênh hỏi RCS.
   13. WMS tắt → outbox gửi bù.
   14. Ô đích đầy.
+  15. Move tay / bản tin thô.
+  16. Sửa cấu hình qua web.
+  17. Dashboard.
 - `tests/g8_modules_test.py` test với phần mềm trạm thật ở chế độ mô phỏng (G8-Export, G8-ID). Kết quả ghi ở `docs/TEST_REPORT.md`.
 
-## 10. Chưa làm / còn mở
+## 11. Chưa làm / còn mở
 
 - Đổi đích task đang chạy (`questionLocationNew` + `updateOrderPointInfo`), API 6 (ASN confirm PDA), API 9 (đóng lệnh SX). WCS gốc cũng chưa có hai API này.
 - Đăng nhập cho giao diện web: hiện mở trong LAN, giống các tool G8 khác.

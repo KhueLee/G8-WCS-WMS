@@ -1,11 +1,34 @@
 {
-  "server": {"host": "0.0.0.0", "port": 9100},
-  "mongo": {"uri": "mongodb://127.0.0.1:27017", "db": "g8b_wms"},
-  "wcs": {"url": "http://127.0.0.1:9000"},
+  "server": {
+    "host": "0.0.0.0",
+    "port": 9100
+  },
+  "mongo": {
+    "uri": "mongodb://127.0.0.1:27017",
+    "db": "g8b_wms"
+  },
+  "wcs": {
+    "url": "http://127.0.0.1:9000"
+  },
   "wh_code": "WH_TB",
-  "users": {"WCS_API_User": "123456"},
-  "locations": {"file": "config/locations.json", "store_zone": "B"},
-  "stations": {"MCSX009": "BDD09", "BCXB001": "BCXB01"},
+  "users": {
+    "WCS_API_User": "123456"
+  },
+  "token_minutes": 480,
+  "locations": {
+    "file": "config/locations.json",
+    "store_zone": "B"
+  },
+  "stations": {
+    "MCSX009": "BDD09",
+    "BCXB001": "BCXB01"
+  },
   "auto_putaway": true,
-  "putaway_robot": 1
+  "putaway_robot": 1,
+  "outbox": {
+    "retry_s": 5,
+    "timeout_s": 10
+  },
+  "messages_keep_days": 14,
+  "fail_next": {}
 }

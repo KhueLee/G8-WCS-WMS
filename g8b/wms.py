@@ -7,6 +7,8 @@ Chạy: python -m g8b.wms
 """
 from __future__ import annotations
 
+import base64
+import copy
 import logging
 import os
 import random
@@ -22,10 +24,11 @@ from fastapi.staticfiles import StaticFiles
 from pymongo import ASCENDING, DESCENDING, ReturnDocument
 
 from . import locations as L
-from .common import MsgLog, ROOT, ci_get, clean, load_config, mongo_db, now, setup_logging
+from .common import (MsgLog, ROOT, ci_get, clean, deep_merge, hourly, load_config, mongo_db, now, save_config,
+                     setup_logging, today_start)
 from .outbox import Outbox
 
-VERSION = "0.1.0"
+VERSION = "0.2.0"
 
 DEFAULTS: dict = {
     "server": {"host": "0.0.0.0", "port": 9100},
@@ -303,6 +306,101 @@ class WMS:
         return tke(True, data={"Task_ID": ci_get(d, "Task_ID", default=""), "Location_ID": 0, "Location": loc,
                                "Status": occupied})
 
+    # ------------------------------------------------------------------ cấu hình / dashboard
+    EDITABLE = ("wcs", "wh_code", "users", "token_minutes", "locations", "stations", "auto_putaway",
+                "putaway_robot", "outbox", "messages_keep_days")
+
+    def config_view(self) -> dict:
+        c = {k: copy.deepcopy(self.cfg[k]) for k in self.EDITABLE}
+        return {"config": c, "server": self.cfg["server"], "mongo": self.cfg["mongo"], "file": self.cfg["_path"]}
+
+    def config_save(self, new: dict) -> dict:
+        errs = []
+        if not str(new.get("wcs", {}).get("url", "")).startswith("http"):
+            errs.append("wcs.url phải bắt đầu bằng http")
+        users = new.get("users", {})
+        if not isinstance(users, dict) or not users or any(not k or not v for k, v in users.items()):
+            errs.append("Cần ít nhất 1 tài khoản có tên + mật khẩu")
+        st = new.get("stations", {})
+        if not isinstance(st, dict) or any(not k for k in st):
+            errs.append("stations: line_id không được trống")
+        if errs:
+            return {"ok": False, "msg": "; ".join(errs)}
+        new["stations"] = {k.strip(): L.norm(v) for k, v in st.items()}
+        merged = deep_merge(self.cfg, {k: new[k] for k in self.EDITABLE if k in new})
+        for k in ("users", "stations"):  # dict thay hẳn (cho phép xoá dòng)
+            merged[k] = new[k]
+        old_loc = self.cfg["locations"].get("file")
+        self.cfg.clear()
+        self.cfg.update(merged)
+        save_config(self.cfg)
+        self.outbox.retry_s = float(self.cfg["outbox"]["retry_s"])
+        self.outbox.timeout_s = float(self.cfg["outbox"]["timeout_s"])
+        if self.cfg["locations"].get("file") != old_loc:
+            self.reload_locations()
+        log.info("Lưu cấu hình từ giao diện -> %s", self.cfg["_path"])
+        return {"ok": True, "msg": f"Đã lưu {self.cfg['_path']} và áp dụng"}
+
+    def reload_locations(self) -> dict:
+        f = self.cfg["locations"].get("file")
+        r = L.sync_collection(self.locs, L.load_file(f))
+        log.info("Nạp vị trí %s: %s", f, r)
+        return r
+
+    def locations_def(self) -> dict:
+        d = L.read_def(self.cfg["locations"].get("file", ""))
+        d["count"] = self.locs.count_documents({})
+        return d
+
+    def locations_save_def(self, data: dict) -> dict:
+        f = self.cfg["locations"].get("file", "")
+        if not f.lower().endswith(".json"):
+            f = "config/locations.json"
+            self.cfg["locations"]["file"] = f
+            save_config(self.cfg)
+        n = L.write_def(f, data)
+        self.reload_locations()
+        return {"ok": True, "msg": f"Đã lưu {n} vị trí vào {f}"}
+
+    def locations_upload(self, name: str, b64: str) -> dict:
+        rel = L.save_upload(name, base64.b64decode(b64.split(",")[-1]))
+        self.cfg["locations"]["file"] = rel
+        save_config(self.cfg)
+        r = self.reload_locations()
+        return {"ok": True, "msg": f"Đã nạp {rel}: {r['total']} vị trí ({r['added']} mới)"}
+
+    def dashboard(self) -> dict:
+        t0 = today_start()
+        kinds = {r["_id"]: r["n"] for r in self.orders.aggregate([
+            {"$match": {"created_at": {"$gte": t0}}}, {"$group": {"_id": "$kind", "n": {"$sum": 1}}}])}
+        pst = {r["_id"]: r["n"] for r in self.pallets.aggregate([{"$group": {"_id": "$status", "n": {"$sum": 1}}}])}
+        occ: dict = {}
+        for r in self.locs.aggregate([{"$group": {"_id": {"z": "$zone", "s": "$state"}, "n": {"$sum": 1}}}]):
+            occ.setdefault(r["_id"]["z"] or "-", {})[r["_id"]["s"]] = r["n"]
+        zone = self.cfg["locations"]["store_zone"]
+        z = occ.get(zone, {})
+        total = sum(z.values())
+        reserved = self.locs.count_documents({"zone": zone, "state": L.EMPTY, "task": {"$ne": None}})
+        ob = self.db["outbox"]
+        return clean({
+            "now": now(), "store_zone": zone,
+            "tiles": {
+                "orders_today": sum(kinds.values()), "orders_by_kind": kinds,
+                "orders_running": self.orders.count_documents({"status": {"$in": ["SENT", "RUNNING", "CANCEL_SENT"]}}),
+                "orders_failed": self.orders.count_documents({"status": {"$in": ["FAILED", "REJECTED"]},
+                                                              "created_at": {"$gte": t0}}),
+                "pallets": pst,
+                "zone_total": total, "zone_full": z.get(L.FULL, 0), "zone_reserved": reserved,
+                "zone_free": max(z.get(L.EMPTY, 0) - reserved, 0),
+                "outbox_pending": ob.count_documents({"status": {"$in": ["PENDING", "SENDING"]}}),
+                "outbox_dead": ob.count_documents({"status": "DEAD"}),
+            },
+            "hourly_orders": hourly(self.orders, "created_at", {}),
+            "hourly_identified": hourly(self.pallets, "identified_at", {}),
+            "occupancy": occ,
+            "events": list(self.events.find().sort("t", DESCENDING).limit(8)),
+        })
+
 
 def build_app(w: WMS) -> FastAPI:
     app = FastAPI(title="G8 WMS ảo", version=VERSION)
@@ -380,6 +478,45 @@ def build_app(w: WMS) -> FastAPI:
     async def ui_export(req: Request):
         b = await req.json()
         return w.create_export(b["belt"], b["picks"])
+
+    @app.get("/api/dashboard")
+    def ui_dashboard():
+        return w.dashboard()
+
+    @app.get("/api/settings")
+    def ui_settings():
+        return w.config_view()
+
+    @app.put("/api/settings")
+    async def ui_settings_save(req: Request):
+        try:
+            return w.config_save(await req.json())
+        except Exception as e:
+            log.exception("lưu cấu hình lỗi")
+            return {"ok": False, "msg": str(e)}
+
+    @app.get("/api/locations/def")
+    def ui_loc_def():
+        return w.locations_def()
+
+    @app.put("/api/locations/def")
+    async def ui_loc_def_save(req: Request):
+        try:
+            return w.locations_save_def(await req.json())
+        except Exception as e:
+            return {"ok": False, "msg": str(e)}
+
+    @app.post("/api/locations/upload")
+    async def ui_loc_upload(req: Request):
+        b = await req.json()
+        try:
+            return w.locations_upload(b.get("name", ""), b.get("b64", ""))
+        except Exception as e:
+            return {"ok": False, "msg": str(e)}
+
+    @app.post("/api/locations/reload")
+    def ui_loc_reload():
+        return {"ok": True, **w.reload_locations()}
 
     @app.get("/api/orders")
     def ui_orders(limit: int = 200):

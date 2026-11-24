@@ -1,4 +1,4 @@
-# G8 luồng B – WMS ảo + WCS B (v0.1.0)
+# G8 luồng B – WMS ảo + WCS B (v0.2.0)
 
 Hệ tích hợp tự chủ cho G8: **WMS ảo** nói API TKELog V5, **WCS B** nói đúng device API của G8-ID / G8-Export và API RCS HuaRay. Chuyển một trạm từ luồng A (TKELog + WCS gốc) sang luồng B chỉ cần đổi URL, không sửa phần mềm trạm.
 
@@ -21,10 +21,24 @@ Hệ tích hợp tự chủ cho G8: **WMS ảo** nói API TKELog V5, **WCS B** n
 6. Trên RCS, vào *Third-party Service Configuration* và thêm một mục task-status trỏ về `http://<IP máy WCS B>:9000/rcs/taskStatusReport`.
 7. Mở cổng 9000 / 9100 cho máy khác gọi vào: chuột phải `tools\open_firewall.bat` → *Run as administrator*.
 
+**Giao diện web** (tab ở cột trái, mở thẳng một tab bằng `#tên`, vd. `http://<máy>:9000/#cfg`):
+- WCS B:
+  - Dashboard;
+  - Di chuyển, Định danh, Xuất hàng;
+  - **Đặt lệnh** (Move tay không báo WMS, gửi bản tin WMS mẫu để test);
+  - Trạm / Line, Vị trí, Outbox, Cảnh báo, Bản tin;
+  - **Cấu hình** (WMS, RCS, line định danh / băng tải, danh sách vị trí, tải Excel vị trí).
+- WMS ảo:
+  - Dashboard;
+  - **Đặt lệnh** PO / ASN, Di chuyển, Xuất DO (chọn pallet trong kho);
+  - Lệnh, Pallet, Vị trí, Sự kiện, Outbox, Bản tin;
+  - **Cấu hình** (WCS, tài khoản API, line → điểm sàn, zone lưu trữ, tự cất kệ, vị trí).
+- Lưu cấu hình trên web sẽ ghi `config/*.json` (giữ bản `.bak`) và áp dụng ngay. Riêng cổng và MongoDB thì phải sửa file rồi chạy lại.
+
 **Chạy thử trên một máy không cần thiết bị:** `run_all_demo.bat` bật MongoDB, các simulator, WMS ảo và WCS B, rồi mở hai giao diện.
 
 **Test:**
-- `run_tests.bat` chạy 14 kịch bản đầu cuối trên cổng và DB riêng, không đụng dữ liệu đang chạy.
+- `run_tests.bat` chạy 17 kịch bản đầu cuối trên cổng và DB riêng, không đụng dữ liệu đang chạy.
 - Test với phần mềm trạm thật ở chế độ mô phỏng:
   ```
   .venv\Scripts\python tests\g8_modules_test.py --export C:\G8-Export --id C:\G8-ID\G8-ID-Deploy
