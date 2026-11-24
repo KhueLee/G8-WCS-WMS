@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>G8 WCS B</title><link rel="stylesheet" href="/static/style.css"></head>
+<body>
+<header><h1>G8 WCS B – giám sát</h1><div id="stat"></div></header>
+<nav id="tabs"></nav><main id="main"></main><div id="toast"></div>
+<script src="/static/common.js"></script>
+<script>
+async function stat() {
+  const s = await api('/api/status');
+  const f = o => Object.entries(o || {}).map(([k, v]) => `${k}:<b>${v}</b>`).join(' ');
+  $('#stat').innerHTML = `v${s.version} · RCS ${s.rcs_ok === null ? '?' : s.rcs_ok ? badge('OK') : badge('ERROR')}
+    · Move ${f(s.moves)} · Định danh ${f(s.identify)} · Xuất ${f(s.export)} · Outbox ${f(s.outbox)} · Cảnh báo 24h <b>${s.alerts}</b>`;
+}
+setInterval(stat, 3000); stat();
+
+async function act(action, task_id) {
+  if (!confirm(`${action} task ${task_id}?`)) return;
+  const r = await api('/api/moves/action', {action, task_id}); toast(r, !r.ok); render();
+}
+async function lineEnable(line_id, enabled) {
+  if (!confirm(`${enabled ? 'BẬT' : 'TẮT'} line ${line_id} trên WCS B?`)) return;
+  toast(await api('/api/lines/enable', {line_id, enabled})); render();
+}
+async function locSet(code) {
+  const st = prompt(`Trạng thái mới cho ô ${code} (EMPTY / FULL / LOCKED):`, 'LOCKED'); if (!st) return;
+  toast(await api('/api/locations/set', {code, state: st.toUpperCase()})); render();
+}
+async function obRetry(key) { toast(await api('/api/outbox/retry', {key})); render(); }
+async function doClose(do_id) { if (confirm('Đóng tay DO ' + do_id + '?')) { toast(await api('/api/export/close', {do_id})); render(); } }
+
+const render = tabs([['moves', 'Di chuyển (Move)'], ['identify', 'Định danh'], ['export', 'Xuất hàng'], ['lines', 'Trạm / Line'],
+  ['locs', 'Vị trí'], ['outbox', 'Outbox'], ['alerts', 'Cảnh báo'], ['msg', 'Bản tin']], async t => {
+  if (t === 'moves') {
+    const rows = await api('/api/moves');
+    return table(rows, [['Tạo lúc', 'created_at'], ['Task_ID', 'task_id'], ['Pallet', 'pallet_id'], ['Từ', 'loc_old'], ['Đến', 'loc_new'],
+      ['Robot', 'type_robot'], ['Move', 'type_move'], ['Trạng thái', r => badge(r.status)], ['orderId RCS', 'order_id'],
+      ['RCS', r => esc(r.rcs_status ?? '') + ' ' + esc(r.device || '')], ['Báo WMS', r => badge(r.reported)], ['Lần', 'attempt'],
+      ['Lỗi', 'error'],
+      ['Thao tác', r => ['CREATED', 'DISPATCHED', 'RUNNING'].includes(r.status)
+        ? `<button class=a onclick="act('cancel','${esc(r.task_id)}')">Hủy</button> <button class=a onclick="act('complete','${esc(r.task_id)}')">Xong tay</button>`
+        : ['FAILED', 'CANCELLED', 'SKIPPED'].includes(r.status) ? `<button class=a onclick="act('retry','${esc(r.task_id)}')">Chạy lại</button>` : '']]);
+  }
+  if (t === 'identify') {
+    const rows = await api('/api/identify');
+    return rows.map(o => `<h3>${esc(o.kind)} ${esc(o.po_id)} · ${esc(o.po_name)} · line ${esc(o.line_id)} · ${badge(o.status)} · ${o.pallets_done}/${o.pallets_total} pallet</h3>` +
+      table(o.pallets, [['Task_ID', 'task_id'], ['Pallet', 'pallet_id'], ['Thùng KH', 'ctn_plan'], ['Thùng đạt', 'ctn'],
+        ['Trạng thái', r => badge(r.status)], ['Vị trí WMS', 'wms_location'], ['Lỗi', 'error']])).join('') || '<div class=empty>Chưa có lệnh</div>';
+  }
+  if (t === 'export') {
+    const rows = await api('/api/export');
+    return table(rows, [['Tạo lúc', 'created_at'], ['DO', 'do_id'], ['Băng tải', 'line_id'], ['Trạng thái', r => badge(r.status)],
+      ['Pallet', r => (r.done_pallets || []).length + '/' + (r.pallets || []).length], ['Danh sách', r => esc((r.pallets || []).join(', '))],
+      ['Lỗi', 'error'], ['', r => ['QUEUED', 'RUNNING'].includes(r.status) ? `<button class=a onclick="doClose(${r.do_id})">Đóng tay</button>` : '']]);
+  }
+  if (t === 'lines') {
+    const rows = await api('/api/lines');
+    return '<p>Cutover: TẮT line trên WCS B = không nhận lệnh mới cho line đó (drain). Đổi URL trên trạm và config WCS gốc theo quy trình trong docs.</p>' +
+      table(rows, [['Line', 'line_id'], ['Loại', 'kind'], ['Tên', 'name'], ['URL trạm', 'url'], ['Điểm sàn', 'location'],
+        ['Bật', r => badge(r.enabled)], ['DO đang chạy', 'busy_do'], ['Trạm gọi về lần cuối', 'last_seen'],
+        ['', r => `<button class=a onclick="lineEnable('${esc(r.line_id)}', ${!r.enabled})">${r.enabled ? 'Tắt' : 'Bật'}</button>`]]);
+  }
+  if (t === 'locs') {
+    const rows = await api('/api/locations');
+    return '<p>Bấm ô để đổi trạng thái (khoá / mở). BUSY = robot đang chở tới.</p><div class=grid>' + rows.map(l =>
+      `<div class="cell ${l.state}" onclick="locSet('${esc(l.code)}')" title="${esc(l.zone)} ${esc(l.task || '')}"><b>${esc(l.code)}</b><br>${badge(l.state)}<br>${esc(l.pallet_id || '')}</div>`).join('') + '</div>';
+  }
+  if (t === 'outbox') {
+    const rows = await api('/api/outbox');
+    return table(rows, [['Tạo', 'created_at'], ['Key', 'key'], ['Loại', 'kind'], ['Bên nhận', 'peer'], ['Trạng thái', r => badge(r.status)],
+      ['Lần', 'tries'], ['Lỗi cuối', 'last_error'], ['', r => r.status !== 'DONE' ? `<button class=a onclick="obRetry('${esc(r.key)}')">Gửi lại</button>` : '']]);
+  }
+  if (t === 'alerts') return table(await api('/api/alerts'), [['Giờ', 't'], ['Mức', r => badge(r.level)], ['Nội dung', 'text'], ['Tham chiếu', 'ref']]);
+  if (t === 'msg') return msgTable(await api('/api/messages'));
+});
+</script>
+</body></html>

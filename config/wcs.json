@@ -1,0 +1,21 @@
+{
+  "server": {"host": "0.0.0.0", "port": 9000},
+  "mongo": {"uri": "mongodb://127.0.0.1:27017", "db": "g8b_wcs"},
+  "wms": {"url": "http://127.0.0.1:9100", "user": "WCS_API_User", "password": "123456", "app_name": "TMS"},
+  "rcs": {
+    "url": "http://127.0.0.1:7100",
+    "area_id": 2,
+    "from_system": "WCS-B",
+    "order_prefix": "VB-",
+    "poll_s": 2.0,
+    "templates": {"1": "forkAutoTemplate2", "2": "liftMoveShelf2"},
+    "high_priority_moves": [2, 14]
+  },
+  "locations": {"file": "config/locations.json", "check": true},
+  "identify_lines": [
+    {"line_id": "MCSX009", "url": "http://127.0.0.1:9501/ids", "location": "BDD09", "enabled": true, "name": "Bàn định danh 9 (simulator)"}
+  ],
+  "export_lines": [
+    {"line_id": "BCXB001", "url": "http://127.0.0.1:9701/scs", "location": "BCXB01", "enabled": true, "name": "Băng tải xuất 1 (simulator)"}
+  ]
+}

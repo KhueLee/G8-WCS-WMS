@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>G8 WMS ảo</title><link rel="stylesheet" href="/static/style.css"></head>
+<body>
+<header><h1>G8 WMS ảo – luồng B</h1><div id="stat"></div></header>
+<nav id="tabs"></nav><main id="main"></main><div id="toast"></div>
+<script src="/static/common.js"></script>
+<script>
+let CFG = {};
+api('/api/config').then(c => { CFG = c; $('#stat').innerHTML = `v${c.version} · kho <b>${c.wh_code}</b> · zone lưu trữ <b>${c.store_zone}</b> · line: ${Object.entries(c.stations).map(([k, v]) => `<b>${k}</b>→${v}`).join(', ')}`; });
+
+async function send(e, path, build) {
+  e.preventDefault();
+  const fd = Object.fromEntries(new FormData(e.target).entries());
+  const r = await api(path, build(fd));
+  toast(r.ok ? `Đã tạo ${r.order_id || ''}` : r, !r.ok);
+  return false;
+}
+const opts = kind => Object.keys(CFG.stations || {}).filter(k => kind === 'ID' ? k.startsWith('MCSX') : k.startsWith('BCXB'))
+  .map(k => `<option>${k}</option>`).join('');
+
+const render = tabs([['new', 'Tạo lệnh'], ['orders', 'Lệnh'], ['pallets', 'Pallet'], ['locs', 'Vị trí'], ['events', 'Sự kiện'],
+  ['outbox', 'Outbox'], ['msg', 'Bản tin']], async t => {
+  if (t === 'new') return `
+<h3>Sản xuất thành phẩm (PO) / Nhập hàng thương mại (ASN) → bàn định danh</h3>
+<form class=f onsubmit="return send(event,'/api/identify',f=>({...f, pallets:+f.pallets, cartons:+f.cartons, inner:+f.inner, gw:+f.gw}))">
+ <label>Loại<select name=kind><option>PO</option><option>ASN</option></select></label>
+ <label>Line<select name=line_id>${opts('ID')}</select></label>
+ <label>Mã SP<input name=item_code value="TRU_G01_50W_AT"></label>
+ <label>Tên SP<input name=item_name value="Bóng Led trụ nhôm T50"></label>
+ <label>Số pallet<input name=pallets value=1 type=number min=1></label>
+ <label>Thùng / pallet<input name=cartons value=6 type=number min=1></label>
+ <label>Chiếc / thùng<input name=inner value=6 type=number></label>
+ <label>GW kg/thùng<input name=gw value=1.637></label>
+ <button>Gửi lệnh</button></form>
+<h3>Hủy lệnh định danh</h3>
+<form class=f onsubmit="return send(event,'/api/identify/cancel',f=>({po_id:+f.po_id}))"><label>PO_ID<input name=po_id></label><button>Hủy</button></form>
+<h3>Di chuyển pallet (Move)</h3>
+<form class=f onsubmit="return send(event,'/api/move',f=>({pallet_id:f.pallet_id, type_robot:+f.type_robot, type_move:+f.type_move, steps:[{from:f.from,to:f.to}]}))">
+ <label>Pallet<input name=pallet_id placeholder="LPNB00001"></label>
+ <label>Từ<input name=from placeholder="S02-250-1"></label><label>Đến<input name=to placeholder="S02-251-1"></label>
+ <label>Robot<select name=type_robot><option value=1>1 xe nâng</option><option value=2>2 đội kệ</option></select></label>
+ <label>Type_Move<input name=type_move value=11 type=number></label><button>Gửi lệnh</button></form>
+<h3>Xuất hàng (DO) → băng tải</h3>
+<form class=f onsubmit="return send(event,'/api/export',f=>({belt:f.belt, picks:f.picks.split(',').map(s=>s.trim()).filter(Boolean).map(s=>{const [p,n]=s.split(':');return {pallet_id:p, ctn_need:n?+n:0}})}))">
+ <label>Băng tải<select name=belt>${opts('DO')}</select></label>
+ <label>Pallet[:số thùng], cách nhau dấu phẩy<input name=picks size=40 placeholder="LPNB00001:3, LPNB00002"></label><button>Gửi lệnh</button></form>`;
+  if (t === 'orders') return table(await api('/api/orders'), [['Tạo', 'created_at'], ['Lệnh', 'order_id'], ['Loại', 'kind'], ['Line', 'line_id'],
+    ['Trạng thái', r => badge(r.status)], ['Pallet', r => esc((r.pallets || [r.pallet_id]).join(', '))], ['Xong', r => esc((r.done || []).join(', '))],
+    ['Kết quả Move', r => esc(JSON.stringify(r.results || ''))], ['Lỗi', 'error']]);
+  if (t === 'pallets') return table(await api('/api/pallets'), [['Tạo', 'created_at'], ['Pallet', 'pallet_id'], ['SP', 'item_code'],
+    ['Trạng thái', r => badge(r.status)], ['Vị trí', 'location'], ['Ô đã gán', 'assigned_location'], ['Thùng', 'ctn_total'],
+    ['Đã xuất', 'ctn_shipped'], ['Lệnh', 'order_id']]);
+  if (t === 'locs') {
+    const rows = await api('/api/locations');
+    return '<div class=grid>' + rows.map(l => `<div class="cell ${l.state}" title="${esc(l.zone)} ${esc(l.task || '')}"><b>${esc(l.code)}</b><br>${badge(l.state)}<br>${esc(l.pallet_id || '')}</div>`).join('') + '</div>';
+  }
+  if (t === 'events') return table(await api('/api/events'), [['Giờ', 't'], ['Sự kiện', 'text']]);
+  if (t === 'outbox') return table(await api('/api/outbox'), [['Tạo', 'created_at'], ['Key', 'key'], ['Trạng thái', r => badge(r.status)], ['Lần', 'tries'], ['Lỗi cuối', 'last_error']]);
+  if (t === 'msg') return msgTable(await api('/api/messages'));
+});
+</script>
+</body></html>
