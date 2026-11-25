@@ -19,9 +19,9 @@ from fastapi.staticfiles import StaticFiles
 
 from .common import ROOT, load_config, setup_logging
 
-VERSION = "0.5.0"
+VERSION = "0.6.0"
 DEFAULTS: dict = {
-    "server": {"host": "0.0.0.0", "port": 9200},
+    "server": {"host": "0.0.0.0", "port": 5510},
     "wms_url": "http://127.0.0.1:9100",
     "wcs_url": "http://127.0.0.1:9000",
     "timeout_s": 30,
@@ -35,6 +35,14 @@ def build_app(cfg: dict) -> FastAPI:
     app = FastAPI(title="G8 luồng B", version=VERSION)
     static = os.path.join(ROOT, "g8b", "static")
     app.mount("/static", StaticFiles(directory=static), name="static")
+
+    @app.middleware("http")
+    async def no_cache_static(req: Request, call_next):
+        # trình duyệt luôn hỏi lại file giao diện, sửa giao diện xong chỉ cần F5
+        resp = await call_next(req)
+        if req.url.path.startswith("/static/"):
+            resp.headers["Cache-Control"] = "no-cache"
+        return resp
     client = httpx.AsyncClient(timeout=cfg["timeout_s"], trust_env=False)
     targets = {"wms": cfg["wms_url"].rstrip("/"), "wcs": cfg["wcs_url"].rstrip("/")}
 

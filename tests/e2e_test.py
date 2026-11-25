@@ -555,7 +555,7 @@ def s21_web_site():
     assert x.status_code == 200 and x.content[:2] == b"PK" and "RAW" in x.headers["content-disposition"]
     assert http.get(w + "/khong-co/api").status_code == 404
     r = http.get(U["wms"] + "/", follow_redirects=False)
-    assert r.status_code == 307 and r.headers["location"].endswith(":9200/"), r.headers
+    assert r.status_code == 307 and r.headers["location"].endswith(f":{P['web']}/"), r.headers
     assert http.get(U["wcs"] + "/", follow_redirects=False).status_code == 307
     h = http.get(w + "/huong-dan")
     pdf = os.path.join(ROOT, "docs", "HUONG_DAN_SU_DUNG.pdf")

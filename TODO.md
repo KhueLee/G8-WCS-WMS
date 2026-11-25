@@ -1,6 +1,6 @@
 # TODO – Luồng B (WMS ảo + WCS ảo) – cập nhật 24/11/2026
 
-Trạng thái: **v0.5.0 (25/11/2026)**; Lee duyệt viết spec + code + test từ 24/11. v0.1.0 xong ngày 24/11: spec `docs/SPEC.md`, code `g8b/`, test `docs/TEST_REPORT.md`.
+Trạng thái: **v0.6.0 (25/11/2026)**; Lee duyệt viết spec + code + test từ 24/11. v0.1.0 xong ngày 24/11: spec `docs/SPEC.md`, code `g8b/`, test `docs/TEST_REPORT.md`.
 
 ## Đã chốt (Lee, 24/11/2026)
 - Luồng B chạy **hàng và kệ thật**, có **chia zone** riêng cho B.
@@ -36,7 +36,7 @@ Trạng thái: **v0.5.0 (25/11/2026)**; Lee duyệt viết spec + code + test t�
 ## Kiểm tra lúc nghiệm thu (không phải câu hỏi)
 - [ ] RCS gửi callback tới mọi URL task-status đã khai, hay chỉ tới 1 URL? Phía B đã xử lý được cả hai trường hợp.
 - [ ] Tên điểm có dấu `-` được RCS chấp nhận (spec ghi tên 4–10 ký tự chữ và số), và kệ FK nhiều tầng thì mỗi tầng có tên điểm riêng.
-- [x] Cổng của B không trùng với WCS gốc (A đang dùng 8040, 8060, 8090, 8088) – B dùng 9000 / 9100 / 9200, Mongo 27018.
+- [x] Cổng của B không trùng với WCS gốc (A đang dùng 8040, 8060, 8090, 8088) – B dùng 9000 / 9100 / 5510, Mongo 27018.
 
 ## P0 / P1 – đã làm (24/11)
 - [x] Spec: `docs/SPEC.md` (WMS→WCS, WCS→WMS, device API, RCS, state machine, outbox, cutover).
@@ -45,14 +45,19 @@ Trạng thái: **v0.5.0 (25/11/2026)**; Lee duyệt viết spec + code + test t�
 - [x] Simulator RCS / bàn định danh / băng tải xuất (`g8b/sim.py`), cổng riêng không trùng A.
 - [x] 14 kịch bản đầu cuối PASS (`tests/e2e_test.py`).
 - [x] Test với **G8-Export thật** (driver simulator) và **G8-ID thật** (MANUAL + công cụ mô phỏng) PASS (`tests/g8_modules_test.py`).
-- [x] File `.bat`: install, start_mongodb, run_wms, run_wcs, run_simulators, run_all_demo, run_tests.
+- [x] 3 file `.bat`: `install.bat` (cài + kiểm tra môi trường), `run.bat` (chạy / stop / status / demo), `update.bat` (cập nhật từ GitHub). Phụ: `tools\run_demo.bat`, `tools\run_tests.bat`.
 
 ## v0.2 – v0.5 (24–25/11)
 - [x] Dashboard, cấu hình và đặt lệnh trên web; MongoDB riêng cổng 27018.
 - [x] Danh sách vị trí theo file highbay (form 14 cột + RAW), nhiều kho theo tiền tố, nạp có chọn điểm + xem khác biệt, xoá kéo theo pallet; xuất Excel dạng RAW.
 - [x] WMS: danh mục sản phẩm (quy cách thùng / pallet), 4 loại lệnh (định danh, luân chuyển, xuất hàng, cập nhật vị trí), sửa tay pallet / ô.
-- [x] Site giao diện chung :9200 (menu nhóm sổ xuống, hộp thoại lựa chọn, logo G8 HOME, nút hướng dẫn PDF).
+- [x] Site giao diện chung :5510 (menu nhóm sổ xuống, hộp thoại lựa chọn, logo G8 HOME, nút hướng dẫn PDF).
 - [x] Hướng dẫn sử dụng `docs/HUONG_DAN_SU_DUNG.pdf` (tools/build_guide.py).
+
+## v0.6 (25/11)
+- [x] Site giao diện cổng **5510**; MongoDB cache tối đa 1 GB.
+- [x] Giao diện luôn nền sáng; ô kệ viền xanh lá = trống, viền cam = có pallet (ghi mã pallet), tab "Vị trí"; nút hướng dẫn PDF ở cuối cột trái; file giao diện gửi `Cache-Control: no-cache`.
+- [x] Gom còn 3 file bat: `install.bat`, `run.bat`, `update.bat` (+ `g8b/ctl.py`).
 
 ## Còn lại
 - [ ] Đổi đích task đang chạy (`questionLocationNew` → `Location_Stocks` + RCS `updateOrderPointInfo`).

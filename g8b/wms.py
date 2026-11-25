@@ -30,11 +30,11 @@ from pymongo import ASCENDING, DESCENDING, ReturnDocument
 from pymongo.errors import DuplicateKeyError
 
 from . import locations as L
-from .common import (MsgLog, ROOT, ci_get, clean, deep_merge, hourly, load_config, mongo_db, now, save_config,
+from .common import (MsgLog, ROOT, ci_get, clean, deep_merge, hourly, site_port, load_config, mongo_db, now, save_config,
                      setup_logging, today_start)
 from .outbox import Outbox
 
-VERSION = "0.5.0"
+VERSION = "0.6.0"
 
 DEFAULTS: dict = {
     "server": {"host": "0.0.0.0", "port": 9100},
@@ -639,8 +639,8 @@ class WMS:
 
 
 def site_redirect(req: Request) -> RedirectResponse:
-    """Giao diện đã gom về site chung (python -m g8b.web, cổng 9200 cùng máy)."""
-    return RedirectResponse(f"http://{req.url.hostname}:9200/")
+    """Giao diện đã gom về site chung (python -m g8b.web, cùng máy, cổng theo config/web.json)."""
+    return RedirectResponse(f"http://{req.url.hostname}:{site_port()}/")
 
 
 def build_app(w: WMS) -> FastAPI:

@@ -1,8 +1,8 @@
 """Tạo file hướng dẫn sử dụng docs/HUONG_DAN_SU_DUNG.pdf.
 
-Cần site đang chạy (run_all_demo.bat hoặc run_web.bat + 2 app) và Microsoft Edge.
+Cần hệ thống đang chạy (run.bat hoặc run.bat demo) và Microsoft Edge.
 Script chụp các trang thật của site (nền sáng), ghép vào nội dung hướng dẫn rồi in PDF bằng Edge.
-Chạy: .venv\\Scripts\\python tools\\build_guide.py [--site http://127.0.0.1:9200]
+Chạy: .venv\\Scripts\\python tools\\build_guide.py [--site http://127.0.0.1:5510]
 """
 from __future__ import annotations
 
@@ -48,8 +48,8 @@ def body() -> str:
   <img class="logo" src="../g8b/static/logo.png">
   <h1>HƯỚNG DẪN SỬ DỤNG</h1>
   <h2>Hệ tích hợp luồng B: WMS ảo + WCS B</h2>
-  <p>Dự án Smart Logistics G8 Home · phiên bản 0.5.0 · 25/11/2026</p>
-  <p class="muted">Giao diện: <b>http://&lt;IP máy chủ&gt;:9200</b> · Tài liệu kỹ thuật: docs/SPEC.md</p>
+  <p>Dự án Smart Logistics G8 Home · phiên bản 0.6.0 · 25/11/2026</p>
+  <p class="muted">Giao diện: <b>http://&lt;IP máy chủ&gt;:5510</b> · Tài liệu kỹ thuật: docs/SPEC.md</p>
 </section>
 
 <h1>1. Giới thiệu</h1>
@@ -57,7 +57,7 @@ def body() -> str:
 <ul>
  <li><b>WMS ảo</b> (cổng 9100): quản lý danh mục sản phẩm, kho, vị trí; tạo lệnh định danh / luân chuyển / xuất hàng / cập nhật vị trí; lưu pallet và thùng đã định danh để xuất hàng. Nói đúng API TKELog WMS V5.</li>
  <li><b>WCS B</b> (cổng 9000): nhận lệnh từ WMS, điều khiển bàn định danh (G8-ID), băng tải xuất (G8-Export) và robot qua RCS HuaRay; báo kết quả về WMS.</li>
- <li><b>Site giao diện</b> (cổng 9200): một trang web cho cả hai phần mềm. Mở bằng Chrome / Edge.</li>
+ <li><b>Site giao diện</b> (cổng 5510): một trang web cho cả hai phần mềm. Mở bằng Chrome / Edge.</li>
 </ul>
 <p>Luồng nghiệp vụ chính:</p>
 <ol>
@@ -70,17 +70,18 @@ def body() -> str:
 <h1>2. Khởi động</h1>
 <table>
 <tr><th>File</th><th>Việc</th></tr>
-<tr><td>install.bat</td><td>Cài thư viện lần đầu (cần Python 3.11+).</td></tr>
-<tr><td>start_mongodb.bat</td><td>MongoDB riêng của luồng B, cổng 27018 (không đụng MongoDB 27017 của WCS gốc / G8-ID).</td></tr>
-<tr><td>run_wms.bat, run_wcs.bat, run_web.bat</td><td>Chạy WMS ảo, WCS B, site giao diện. Mỗi file một cửa sổ, tự chạy lại nếu chương trình dừng. Không đóng các cửa sổ này.</td></tr>
-<tr><td>run_all_demo.bat</td><td>Chạy thử cả hệ trên một máy với robot / bàn định danh / băng tải giả, rồi mở giao diện.</td></tr>
-<tr><td>run_tests.bat</td><td>Chạy bộ kiểm tra tự động (cổng và dữ liệu riêng, không ảnh hưởng dữ liệu đang chạy).</td></tr>
+<tr><td>install.bat</td><td>Cài đặt và kiểm tra môi trường (Python 3.11+, thư viện, cổng, tường lửa, kết nối RCS, RAM, ổ đĩa). Chuột phải → <i>Run as administrator</i> để tự mở cổng tường lửa. Sửa hết các mục [LỖI] trước khi chạy.</td></tr>
+<tr><td>run.bat</td><td>Chạy toàn bộ: MongoDB riêng (cổng 27018), WMS ảo, WCS B, site giao diện, rồi mở trình duyệt. Mỗi thành phần một cửa sổ thu nhỏ "G8B ..." trên thanh tác vụ, tự chạy lại nếu bị dừng – <b>không đóng các cửa sổ này</b>. <code>run.bat stop</code>: dừng toàn bộ; <code>run.bat status</code>: xem trạng thái; <code>run.bat demo</code>: chạy thêm robot / bàn định danh / băng tải giả để thử.</td></tr>
+<tr><td>update.bat</td><td>Cập nhật bản mới từ GitHub: sao lưu và giữ nguyên cấu hình của máy, dừng – cập nhật – kiểm tra – chạy lại hệ thống.</td></tr>
 </table>
-<p>Mở trình duyệt vào <b>http://&lt;IP máy chủ&gt;:9200</b>. Vào thẳng cổng 9100 / 9000 cũng tự chuyển về site này.</p>
+<p>Mở trình duyệt vào <b>http://&lt;IP máy chủ&gt;:5510</b>. Vào thẳng cổng 9100 / 9000 cũng tự chuyển về site này.</p>
+<p><b>Lần đầu cài:</b> cài Python 3.11+ 64-bit → chuột phải <b>install.bat</b> → <i>Run as administrator</i> → sửa hết mục [LỖI] → nhấp đúp <b>run.bat</b>.
+<b>Hằng ngày:</b> chỉ cần <b>run.bat</b> (bấm lại khi đang chạy cũng không sao, thành phần đã chạy được bỏ qua).
+<b>Cập nhật:</b> nhấp đúp <b>update.bat</b>, xem danh sách thay đổi, chọn Y; cấu hình của máy được giữ, bản cũ sao lưu ở <code>backup\\config_&lt;thời gian&gt;</code>.</p>
 
 <h1>3. Giao diện chung</h1>
 <ul>
- <li><b>Cột trái</b>: logo, nút <b>Hướng dẫn sử dụng (PDF)</b>, và các <b>nhóm chức năng</b>: Tổng quan, Đặt lệnh, Theo dõi kho (WMS), Robot &amp; trạm (WCS), Danh mục, Hệ thống. Bấm tên nhóm để sổ / thu các chức năng con. Nhãn WMS / WCS bên cạnh cho biết chức năng thuộc phần mềm nào.</li>
+ <li><b>Cột trái</b>: logo, các <b>nhóm chức năng</b>: Tổng quan, Đặt lệnh, Theo dõi kho (WMS), Robot &amp; trạm (WCS), Danh mục, Hệ thống. Bấm tên nhóm để sổ / thu các chức năng con. Nhãn WMS / WCS bên cạnh cho biết chức năng thuộc phần mềm nào. Nút <b>Hướng dẫn sử dụng (PDF)</b> nằm dưới cùng cột trái.</li>
  <li>Dưới menu là trạng thái kết nối: WMS ảo, WCS B, RCS (● xanh = tốt, ▲ đỏ = lỗi, ○ = chưa rõ).</li>
  <li>Các trang theo dõi tự làm mới mỗi 3 giây; trang có ô nhập (đặt lệnh, cấu hình) không tự làm mới để không mất chữ đang gõ.</li>
  <li>Mọi thao tác thay đổi dữ liệu (hủy lệnh, xoá, khoá ô…) đều hiện <b>hộp thoại</b> nêu rõ hậu quả và các nút lựa chọn; không phải gõ lệnh.</li>
@@ -116,18 +117,18 @@ def body() -> str:
 <ul>
  <li><b>Lệnh WMS</b>: mọi lệnh và trạng thái (SENT đã gửi, RUNNING đang chạy, COMPLETED xong, FAILED / REJECTED lỗi).</li>
  <li><b>Pallet / tồn kho</b>: lọc theo kho, trạng thái, tìm mã. Nút <b>Sửa</b> mở hộp thoại chọn trạng thái và vị trí; <b>Xoá</b> nhả ô đang giữ. Form <b>Tạo pallet tay</b> dùng cho hàng có sẵn (WMS sinh mã thùng theo quy cách).</li>
- <li><b>Ô kệ</b>: lưới ô theo kho; bấm một ô để xem thông tin và chọn thao tác: <b>Khoá ô</b>, <b>Mở khoá</b>, <b>Làm trống ô</b> (pallet mất vị trí), <b>Đặt pallet vào ô</b>.</li>
+ <li><b>Vị trí</b>: lưới ô kệ theo kho; <b>viền xanh lá = trống</b>, <b>viền cam = có pallet</b> (trong ô ghi mã pallet), viền xanh nét đứt = robot đang tới, nền xám = khoá; bấm một ô để xem thông tin và chọn thao tác: <b>Khoá ô</b>, <b>Mở khoá</b>, <b>Làm trống ô</b> (pallet mất vị trí), <b>Đặt pallet vào ô</b>.</li>
  <li><b>Sự kiện</b>: nhật ký nghiệp vụ.</li>
 </ul>
 {fig("w_pallets", "Theo dõi kho → Pallet / tồn kho")}
-{fig("w_locs", "Theo dõi kho → Ô kệ (bấm ô để chọn thao tác)")}
+{fig("w_locs", "Theo dõi kho → Vị trí (bấm ô để chọn thao tác)")}
 
 <h1>6. Robot &amp; trạm (WCS)</h1>
 <ul>
  <li><b>Task robot</b>: từng bước di chuyển gửi RCS. Task đang chạy có <b>Hủy</b> / <b>Xong tay</b>; task lỗi có <b>Chạy lại</b> (chạy lại cả các bước sau trong nhóm). Cột "Báo WMS" cho biết WMS đã nhận kết quả chưa.</li>
  <li><b>Định danh tại bàn</b>: tiến độ từng pallet ở bàn định danh. <b>Xuất tại băng tải</b>: tiến độ DO, nút <b>Đóng tay</b> để kết thúc DO xuất thiếu.</li>
  <li><b>Trạm / Line</b>: bật / tắt line. Tắt line = WCS B không nhận lệnh mới cho line đó (dùng khi chuyển trạm giữa luồng A và B).</li>
- <li><b>Ô kệ (WCS)</b>: trạng thái giữ chỗ phía WCS. <b>Cảnh báo</b>: lỗi gửi lệnh, bản tin bị từ chối, task chạy quá lâu.</li>
+ <li><b>Vị trí (WCS)</b>: trạng thái giữ chỗ phía WCS. <b>Cảnh báo</b>: lỗi gửi lệnh, bản tin bị từ chối, task chạy quá lâu.</li>
 </ul>
 {fig("c_moves", "Robot & trạm → Task robot")}
 {fig("c_lines", "Robot & trạm → Trạm / Line")}
@@ -158,7 +159,9 @@ def body() -> str:
 <h1>9. Xử lý sự cố thường gặp</h1>
 <table>
 <tr><th>Hiện tượng</th><th>Cách xử lý</th></tr>
-<tr><td>Cột trái báo WMS ảo / WCS B "Không kết nối"</td><td>Kiểm tra cửa sổ run_wms.bat / run_wcs.bat còn mở; xem log trong thư mục logs.</td></tr>
+<tr><td>Cột trái báo WMS ảo / WCS B "Không kết nối"</td><td>Chạy <code>run.bat status</code>; thành phần nào tắt thì chạy lại <code>run.bat</code>; xem log trong thư mục logs.</td></tr>
+<tr><td>install.bat báo cổng "đang bị chương trình khác chiếm"</td><td>Tắt chương trình đó, hoặc đổi cổng trong config\\*.json rồi chạy lại install.bat.</td></tr>
+<tr><td>Giao diện chưa đổi sau khi cập nhật</td><td>Bấm Ctrl+F5 trên trình duyệt một lần.</td></tr>
 <tr><td>RCS báo lỗi</td><td>Kiểm tra máy RCS (192.168.110.100:7000) và URL RCS trong Cấu hình WCS.</td></tr>
 <tr><td>Lệnh định danh báo "Kho ... chỉ còn N ô trống"</td><td>Giải phóng ô hoặc nạp thêm điểm cho kho cất (Danh mục → Danh sách vị trí).</td></tr>
 <tr><td>Task robot FAILED</td><td>Xem cột Lỗi; sửa nguyên nhân (ô sai, robot báo lỗi) rồi bấm Chạy lại; hoặc Xong tay nếu robot đã làm xong.</td></tr>
@@ -202,7 +205,7 @@ code { background: #f2f2f2; padding: 0 3px; }
 def main():
     sys.stdout.reconfigure(encoding="utf-8")
     ap = argparse.ArgumentParser()
-    ap.add_argument("--site", default="http://127.0.0.1:9200")
+    ap.add_argument("--site", default="http://127.0.0.1:5510")
     ap.add_argument("--no-shots", action="store_true", help="dùng ảnh đã chụp trong docs/guide_img")
     a = ap.parse_args()
     if not EDGE:

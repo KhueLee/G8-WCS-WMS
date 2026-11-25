@@ -48,6 +48,11 @@ def load_config(name: str, defaults: dict) -> dict:
     return cfg
 
 
+def site_port() -> int:
+    """Cổng site giao diện chung (config/web.json, mặc định 5510) – trang \"/\" của WMS / WCS chuyển về đây."""
+    return int(load_config("web", {"server": {"port": 5510}})["server"]["port"])
+
+
 def setup_logging(name: str, log_dir: str | None = None, keep_days: int = 30) -> logging.Logger:
     log_dir = log_dir or os.path.join(ROOT, "logs", name)
     os.makedirs(log_dir, exist_ok=True)

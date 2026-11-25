@@ -150,7 +150,7 @@ page('w_dash', 'overview', 'Kho (WMS)', 'WMS', async () => {
     <div class="card"><h3>Pallet định danh xong theo giờ – hôm nay</h3>${hourBars(d.hourly_identified, 'pallet')}</div>
   </div>
   <div class="grid2">
-    <div class="card"><h3>Ô kệ theo kho</h3>${occupancy(d.occupancy)}</div>
+    <div class="card"><h3>Vị trí theo kho</h3>${occupancy(d.occupancy)}</div>
     <div class="card"><h3>Tồn kho theo kho × sản phẩm</h3>${table(d.inventory, [['Kho', r => esc(r.wh) + ' · ' + esc(whName(r.wh))], ['Sản phẩm', 'item_code'], ['Pallet', 'pallets', 'num'], ['Thùng', 'cartons', 'num']])}</div>
   </div>
   <div class="card"><h3>Sự kiện gần đây</h3>${table(d.events, [['Giờ', 't'], ['Sự kiện', 'text']])}</div>`;
@@ -240,12 +240,12 @@ page('w_pallets', 'track', 'Pallet / tồn kho', 'WMS', async () => {
     ['', r => `<button class=a onclick="palEdit('${esc(r.pallet_id)}')">Sửa</button> <button class="a d" onclick="palDel('${esc(r.pallet_id)}')">Xoá</button>`]])}</div></div>`;
 });
 
-page('w_locs', 'track', 'Ô kệ', 'WMS', async () => {
+page('w_locs', 'track', 'Vị trí', 'WMS', async () => {
   await loadWmsCfg();
   const rows = (await api(W('/api/locations?wh=' + encodeURIComponent(LF.wh)))).filter(l => l.kind === 'RACK');
   return `<div class="row" style="margin-bottom:10px"><label class="fl">Kho<select onchange="LF.wh=this.value;show()">${whOpts(LF.wh, true)}</select></label>
     <span class="hint">${rows.length} ô · bấm ô để xem và chọn thao tác (khoá / mở khoá / làm trống / đặt pallet).</span></div><div class=grid>` +
-    rows.map(l => `<div class="cell ${l.state}" onclick="cellSet('${esc(l.code)}')" data-tip="${esc(l.zone)} · ${esc(l.state)} ${esc(l.task || '')}"><b>${esc(l.code)}</b><br>${badge(l.state)}<br>${esc(l.pallet_id || '')}</div>`).join('') + '</div>';
+    rows.map(l => `<div class="cell ${l.state}" onclick="cellSet('${esc(l.code)}')" data-tip="${esc(l.zone)} · ${esc(l.state)}${l.pallet_id ? ' · pallet ' + esc(l.pallet_id) : ''} ${esc(l.task || '')}">${cellBody(l)}</div>`).join('') + '</div>';
 });
 
 page('w_events', 'track', 'Sự kiện', 'WMS', async () => table(await api(W('/api/events')), [['Giờ', 't'], ['Sự kiện', 'text']]));
@@ -279,7 +279,7 @@ page('w_cfg', 'system', 'Cấu hình WMS', 'WMS', async () => {
   <div class="card"><h3>Khác</h3><div class="row">
     ${fld('Gửi lại sau (s)', 'outbox.retry_s', c.outbox.retry_s, 'num')}${fld('Timeout gửi (s)', 'outbox.timeout_s', c.outbox.timeout_s, 'num')}
     ${fld('Giữ bản tin (ngày)', 'messages_keep_days', c.messages_keep_days, 'num')}</div>
-    <div class="hint" style="margin-top:10px">Cổng ${S.server.port}, MongoDB ${esc(S.mongo.uri)} / ${esc(S.mongo.db)}: sửa trong ${esc(S.file)} rồi chạy lại run_wms.bat.</div></div>
+    <div class="hint" style="margin-top:10px">Cổng ${S.server.port}, MongoDB ${esc(S.mongo.uri)} / ${esc(S.mongo.db)}: sửa trong ${esc(S.file)} rồi chạy <b>run.bat stop</b> và <b>run.bat</b>.</div></div>
   <div class="savebar"><button type="button" class="p" onclick="saveWmsCfg()">Lưu và áp dụng</button><span class="hint">Ghi ${esc(S.file)} (giữ bản .bak), áp dụng ngay.</span></div>
   </form>`;
 });

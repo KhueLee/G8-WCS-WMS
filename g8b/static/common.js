@@ -174,19 +174,25 @@ function hourBars(vals, unit) {
 function niceStep(max) { const raw = max / 4, p = 10 ** Math.floor(Math.log10(raw)), m = raw / p; return Math.max(1, (m <= 1 ? 1 : m <= 2 ? 2 : m <= 5 ? 5 : 10) * p); }
 
 // độ lấp đầy ô theo kho: Đầy / Robot đang tới / Khoá, phần còn lại là trống (nền)
-const OCC = [['FULL', 'Đầy', 'var(--series-1)'], ['BUSY', 'Robot đang tới', 'var(--series-2)'], ['LOCKED', 'Khoá', 'var(--series-3)']];
+const OCC = [['FULL', 'Có pallet', 'var(--cell-full)'], ['BUSY', 'Robot đang tới', 'var(--cell-busy)'], ['LOCKED', 'Khoá', 'var(--cell-lock)']];
 function occupancy(occ) {
   const zones = Object.keys(occ || {}).sort();
   if (!zones.length) return '<div class="empty">Chưa nạp vị trí</div>';
   const legend = '<div class="legend">' + OCC.map(o => `<span><b style="background:${o[2]}"></b>${o[1]}</span>`).join('') +
-    '<span><b style="background:var(--track)"></b>Trống</span></div>';
+    '<span><b style="background:var(--cell-empty)"></b>Trống</span></div>';
   return legend + zones.map(z => {
     const c = occ[z], total = Object.values(c).reduce((a, b) => a + b, 0) || 1;
     const segs = OCC.filter(o => c[o[0]]).map(o => `<div style="width:${100 * c[o[0]] / total}%;background:${o[2]}" data-tip="<b>Kho ${esc(z)}</b><br>${o[1]}: ${c[o[0]]}/${total}"></div>`).join('');
     const empty = c.EMPTY || 0;
-    const rest = empty ? `<div style="width:${100 * empty / total}%;background:var(--track)" data-tip="<b>Kho ${esc(z)}</b><br>Trống: ${empty}/${total}"></div>` : '';
+    const rest = empty ? `<div style="width:${100 * empty / total}%;background:var(--cell-empty)" data-tip="<b>Kho ${esc(z)}</b><br>Trống: ${empty}/${total}"></div>` : '';
     return `<div class="occ"><div class="zn">Kho ${esc(z)}</div><div class="tr">${segs}${rest}</div><div class="nb">${total - empty}/${total} ô có hàng</div></div>`;
   }).join('');
+}
+
+// nội dung một ô kệ: mã ô + mã pallet (nếu có); trạng thái thể hiện bằng màu viền (xanh lá trống, cam có pallet)
+const CELL_NOTE = { BUSY: 'Robot đang tới', LOCKED: 'Khoá' };
+function cellBody(l) {
+  return `<b>${esc(l.code)}</b>` + (l.pallet_id ? `<span class="pl">${esc(l.pallet_id)}</span>` : CELL_NOTE[l.state] ? `<span class="nt">${CELL_NOTE[l.state]}</span>` : '');
 }
 
 // ---------------------------------------------------------------- form cấu hình

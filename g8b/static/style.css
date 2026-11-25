@@ -5,29 +5,17 @@
   --series-1:#2a78d6; --series-2:#eb6834; --series-3:#1baf7a; --track:#e6e5e0;
   --good:#0ca30c; --warning:#fab219; --serious:#ec835a; --critical:#d03b3b;
   --good-ink:#006300; --crit-ink:#b42323; --warn-ink:#8a5a00;
+  /* trạng thái ô kệ: xanh lá = trống, cam = có pallet */
+  --cell-empty:#1baf7a; --cell-empty-bg:#e3f6ec; --cell-full:#eb6834; --cell-full-bg:#fde6d8;
+  --cell-busy:#2a78d6; --cell-busy-bg:#e4eefb; --cell-lock:#77766f; --cell-lock-bg:#ecebe7;
 }
-@media (prefers-color-scheme: dark) {
-  :root:where(:not([data-theme="light"])) {
-    color-scheme: dark;
-    --bg:#121211; --surface:#1a1a19; --fg:#f0efec; --fg2:#c3c2b7; --mut:#93928a; --line:#2e2e2b; --grid:#262624;
-    --acc:#3987e5; --side:#161615;
-    --series-1:#3987e5; --series-2:#d95926; --series-3:#199e70; --track:#2c2c29;
-    --good-ink:#3fbf3f; --crit-ink:#ef7a7a; --warn-ink:#f2c14e;
-  }
-}
-:root[data-theme="dark"] {
-  color-scheme: dark;
-  --bg:#121211; --surface:#1a1a19; --fg:#f0efec; --fg2:#c3c2b7; --mut:#93928a; --line:#2e2e2b; --grid:#262624;
-  --acc:#3987e5; --side:#161615;
-  --series-1:#3987e5; --series-2:#d95926; --series-3:#199e70; --track:#2c2c29;
-  --good-ink:#3fbf3f; --crit-ink:#ef7a7a; --warn-ink:#f2c14e;
-}
+/* giao diện luôn nền sáng, không theo chế độ tối của hệ điều hành */
 * { box-sizing: border-box; }
 body { margin:0; font:13px/1.45 system-ui, "Segoe UI", sans-serif; background:var(--bg); color:var(--fg); }
 
 /* ---------- bố cục: thanh tab bên trái */
 .app { display:grid; grid-template-columns: 210px 1fr; min-height:100vh; }
-aside { background:var(--side); border-right:1px solid var(--line); padding:14px 10px; position:sticky; top:0; height:100vh; overflow:auto; }
+aside { background:var(--side); border-right:1px solid var(--line); padding:14px 10px; position:sticky; top:0; height:100vh; overflow:auto; display:flex; flex-direction:column; }
 aside h1 { font-size:15px; margin:0 6px 2px; }
 aside .ver { color:var(--mut); font-size:12px; margin:0 6px 14px; }
 #tabs { display:flex; flex-direction:column; gap:2px; }
@@ -110,9 +98,14 @@ input:focus, select:focus, textarea:focus { outline:2px solid var(--acc); outlin
 
 /* ---------- lưới vị trí */
 .grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(84px, 1fr)); gap:4px; }
-.cell { border:1px solid var(--line); border-radius:5px; padding:4px; font-size:11px; background:var(--surface); cursor:pointer; }
-.cell.FULL { border-left:4px solid var(--series-1); } .cell.BUSY { border-left:4px solid var(--series-2); }
-.cell.LOCKED { border-left:4px solid var(--series-3); opacity:.8; }
+.cell { border:2px solid var(--line); border-radius:6px; padding:5px 7px; font-size:11px; background:var(--surface); cursor:pointer; min-height:48px; }
+.cell .pl { display:block; font-weight:700; font-size:12px; margin-top:3px; color:var(--fg); word-break:break-all; }
+.cell .nt { display:block; margin-top:3px; color:var(--fg2); }
+.cell.EMPTY { border-color:var(--cell-empty); }
+.cell.FULL { border-color:var(--cell-full); }
+.cell.BUSY { border-color:var(--cell-busy); border-style:dashed; }
+.cell.LOCKED { border-color:var(--cell-lock); background:var(--cell-lock-bg); }
+.cell:hover { box-shadow:0 0 0 2px var(--acc); }
 
 /* ---------- menu trái: nhóm lớn, bấm để sổ chức năng con */
 #tabs .ng { margin-bottom:2px; }
@@ -130,7 +123,8 @@ input:focus, select:focus, textarea:focus { outline:2px solid var(--acc); outlin
 #tabs .it.on small { color:var(--acc-fg); border-color:var(--acc-fg); }
 main > h2 .b { vertical-align:middle; font-weight:400; }
 .logo { display:block; width:100%; max-width:170px; height:auto; margin:0 auto 6px; }
-.help { display:block; text-align:center; margin:10px 6px 0; text-decoration:none; }
+.help { display:block; text-align:center; margin:auto 6px 0; text-decoration:none; flex-shrink:0; }
+.conn { margin-bottom:14px; }
 @media (max-width: 760px) {
   #tabs { flex-direction:column; }
   #tabs .gi { padding-left:4px; }

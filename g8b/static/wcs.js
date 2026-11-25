@@ -20,7 +20,7 @@ async function wcsCell(code) {
   if (c.state === 'LOCKED') btns.push({label: 'Mở khoá', value: 'EMPTY', kind: 'p'});
   if (c.state === 'FULL') btns.push({label: 'Đánh dấu trống', value: 'EMPTY', kind: 'd'});
   const r = await dialog({title: `Ô ${code} (WCS B)`, body: `<p>Kho <b>${esc(c.zone)}</b> · ${badge(c.state)} ${c.state === 'BUSY' ? 'robot đang chở tới – không sửa được' : ''}${c.pallet_id ? `<br>Pallet: <b>${esc(c.pallet_id)}</b>` : ''}${c.task ? `<br>Task: ${esc(c.task)}` : ''}</p>
-    <p class="hint">Trạng thái ô của WCS B dùng để giữ chỗ khi gọi robot. Tồn kho / pallet sửa ở WMS (Theo dõi kho → Ô kệ).</p>`, buttons: btns});
+    <p class="hint">Trạng thái ô của WCS B dùng để giữ chỗ khi gọi robot. Tồn kho / pallet sửa ở WMS (Theo dõi kho → Vị trí).</p>`, buttons: btns});
   if (r.value) { done(await api(C('/api/locations/set'), {code, state: r.value})); show(); }
 }
 async function obRetry(key) { done(await api(C('/api/outbox/retry'), {key})); show(); }
@@ -74,7 +74,7 @@ page('c_dash', 'overview', 'Điều khiển (WCS)', 'WCS', async () => {
     <div class="card"><h3>Pallet định danh theo giờ – hôm nay</h3>${hourBars(d.hourly_pallets, 'pallet')}</div>
   </div>
   <div class="grid2">
-    <div class="card"><h3>Ô kệ theo kho (WCS)</h3>${occupancy(d.occupancy)}</div>
+    <div class="card"><h3>Vị trí theo kho (WCS)</h3>${occupancy(d.occupancy)}</div>
     <div class="card"><h3>Trạm / Line</h3>${table(d.lines, [['Line', 'line_id'], ['Loại', 'kind'], ['Trạng thái', r => r.enabled ? status(true, 'Bật') : status(false, '', 'Tắt')],
       ['Đang làm', 'active', 'num'], ['Gọi về lần cuối', 'last_seen']])}</div>
   </div>
@@ -125,10 +125,10 @@ page('c_lines', 'control', 'Trạm / Line', 'WCS', async () => '<div class="card
     ['Trạng thái', r => r.enabled ? status(true, 'Bật') : status(false, '', 'Tắt')], ['DO đang chạy', 'busy_do'], ['Gọi về lần cuối', 'last_seen'],
     ['', r => `<button class=a onclick="lineEnable('${esc(r.line_id)}', ${!r.enabled})">${r.enabled ? 'Tắt' : 'Bật'}</button>`]]) + '</div>');
 
-page('c_locs', 'control', 'Ô kệ (WCS)', 'WCS', async () => {
+page('c_locs', 'control', 'Vị trí (WCS)', 'WCS', async () => {
   const rows = (await api(C('/api/locations'))).filter(l => l.kind === 'RACK');
   return '<div class="hint">Trạng thái ô phía WCS (giữ chỗ khi gọi robot). Bấm ô để xem và chọn thao tác.</div><div class=grid>' + rows.map(l =>
-    `<div class="cell ${l.state}" onclick="wcsCell('${esc(l.code)}')" data-tip="${esc(l.zone)} · ${esc(l.state)} ${esc(l.task || '')}"><b>${esc(l.code)}</b><br>${badge(l.state)}<br>${esc(l.pallet_id || '')}</div>`).join('') + '</div>';
+    `<div class="cell ${l.state}" onclick="wcsCell('${esc(l.code)}')" data-tip="${esc(l.zone)} · ${esc(l.state)}${l.pallet_id ? ' · pallet ' + esc(l.pallet_id) : ''} ${esc(l.task || '')}">${cellBody(l)}</div>`).join('') + '</div>';
 });
 
 page('c_alerts', 'control', 'Cảnh báo', 'WCS', async () => table(await api(C('/api/alerts')), [['Giờ', 't'], ['Mức', r => badge(r.level)], ['Nội dung', 'text'], ['Tham chiếu', 'ref']]));
@@ -161,7 +161,7 @@ page('c_cfg', 'system', 'Cấu hình WCS', 'WCS', async () => {
     ${fld('Kiểm tra vị trí', 'locations.check', c.locations.check, 'bool')}
     ${fld('Gửi lại sau (s)', 'outbox.retry_s', c.outbox.retry_s, 'num')}${fld('Timeout gửi (s)', 'outbox.timeout_s', c.outbox.timeout_s, 'num')}
     ${fld('Chu kỳ xử lý (s)', 'worker_s', c.worker_s, 'num')}${fld('Giữ bản tin (ngày)', 'messages_keep_days', c.messages_keep_days, 'num')}</div>
-    <div class="hint" style="margin-top:10px">Cổng ${WCFG.server.port}, MongoDB ${esc(WCFG.mongo.uri)} / ${esc(WCFG.mongo.db)}: sửa trong ${esc(WCFG.file)} rồi chạy lại run_wcs.bat.</div></div>
+    <div class="hint" style="margin-top:10px">Cổng ${WCFG.server.port}, MongoDB ${esc(WCFG.mongo.uri)} / ${esc(WCFG.mongo.db)}: sửa trong ${esc(WCFG.file)} rồi chạy <b>run.bat stop</b> và <b>run.bat</b>.</div></div>
   <div class="savebar"><button type="button" class="p" onclick="saveWcsCfg()">Lưu và áp dụng</button><span class="hint">Ghi ${esc(WCFG.file)} (giữ bản .bak), áp dụng ngay không cần khởi động lại.</span></div>
   </form>`;
 });

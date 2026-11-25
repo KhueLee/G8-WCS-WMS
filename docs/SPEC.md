@@ -1,4 +1,4 @@
-# G8 luồng B – Spec WMS ảo + WCS B (v0.5.0, 25/11/2026)
+# G8 luồng B – Spec WMS ảo + WCS B (v0.6.0, 25/11/2026)
 
 Tài liệu mô tả đúng hành vi của mã nguồn trong repo này (`g8b/`). Các quyết định đã chốt với Lee: `TODO.md`.
 
@@ -20,13 +20,15 @@ Tài liệu mô tả đúng hành vi của mã nguồn trong repo này (`g8b/`).
 
 | Thành phần | Lệnh | Cổng mặc định | Giao diện |
 |---|---|---|---|
-| **Site giao diện chung** | `run_web.bat` → `python -m g8b.web` | **9200** | `http://<máy>:9200` (một trang cho cả WMS ảo và WCS B) |
-| WCS B | `run_wcs.bat` → `python -m g8b.wcs` | 9000 | `/` chuyển về site :9200 |
-| WMS ảo | `run_wms.bat` → `python -m g8b.wms` | 9100 | `/` chuyển về site :9200 |
-| RCS giả | `python -m g8b.sim rcs` | 7100 | `/` (trạng thái) |
+| **Site giao diện chung** | `run.bat` → `python -m g8b.web` | **5510** | `http://<máy>:5510` (một trang cho cả WMS ảo và WCS B) |
+| WCS B | `run.bat` → `python -m g8b.wcs` | 9000 | `/` chuyển về site (cổng theo `config/web.json`) |
+| WMS ảo | `run.bat` → `python -m g8b.wms` | 9100 | `/` chuyển về site (cổng theo `config/web.json`) |
+| RCS giả | `run.bat demo` → `python -m g8b.sim rcs` | 7100 | `/` (trạng thái) |
 | Bàn định danh giả | `python -m g8b.sim ids` | 9501 | `/` |
 | Băng tải xuất giả | `python -m g8b.sim scs` | 9701 | `/` |
-| MongoDB | `start_mongodb.bat` (mongod 4.4 kèm theo) | **27018** (tách khỏi Mongo 27017 của WCS gốc / G8-ID), chỉ 127.0.0.1 | – |
+| MongoDB | `run.bat` (mongod 4.4 kèm theo, `--wiredTigerCacheSizeGB 1`) | **27018** (tách khỏi Mongo 27017 của WCS gốc / G8-ID), chỉ 127.0.0.1 | – |
+
+Vận hành chỉ qua 3 file: `install.bat` (cài + kiểm tra môi trường, mở tường lửa khi chạy quyền Administrator), `run.bat` (chạy; `stop` / `status` / `demo`), `update.bat` (cập nhật từ GitHub, giữ `config\`). Phần kiểm tra / dừng nằm trong `g8b/ctl.py`.
 
 Cổng của B không trùng với WCS gốc (8040, 8060, 8090, 8088) hay trạm (8500, 8600, 8700, 8080).
 
@@ -166,8 +168,9 @@ Line đang tắt thì WCS B từ chối lệnh mới (201). Lệnh cho line khô
 
 ## 9. Giao diện web và cấu hình
 
-- **Một site chung** (`g8b/web.py`, cổng 9200, cấu hình `config/web.json`): phục vụ giao diện và chuyển tiếp API `/wms/...` → WMS ảo, `/wcs/...` → WCS B (2 app có thể ở 2 máy). App tắt thì site trả 502 kèm thông báo; trang "/" của 2 app chuyển về site.
-- **Cột trái**: logo G8 HOME, nút **Hướng dẫn sử dụng (PDF)** (mở `/huong-dan` = `docs/HUONG_DAN_SU_DUNG.pdf`), các **nhóm lớn**: Tổng quan, Đặt lệnh, Theo dõi kho (WMS), Robot & trạm (WCS), Danh mục, Hệ thống. Bấm nhóm để sổ / thu chức năng con (nhớ trạng thái); nhãn WMS / WCS cho biết chức năng thuộc app nào; dưới menu là trạng thái WMS / WCS / RCS. Mở thẳng một trang: `/#w_new_id`, `/#c_moves`…
+- **Một site chung** (`g8b/web.py`, cổng 5510, cấu hình `config/web.json`): phục vụ giao diện và chuyển tiếp API `/wms/...` → WMS ảo, `/wcs/...` → WCS B (2 app có thể ở 2 máy). App tắt thì site trả 502 kèm thông báo; trang "/" của 2 app chuyển về site.
+- Giao diện luôn **nền sáng** (không theo chế độ tối của hệ điều hành; file giao diện gửi `Cache-Control: no-cache` nên sửa xong chỉ cần F5). Tab **Vị trí** (ô kệ): **viền xanh lá = trống, viền cam = có pallet** (trong ô chỉ ghi mã ô + mã pallet, không ghi chữ trạng thái), viền xanh nét đứt = robot đang tới, nền xám = khoá.
+- **Cột trái**: logo G8 HOME, các **nhóm lớn**: Tổng quan, Đặt lệnh, Theo dõi kho (WMS), Robot & trạm (WCS), Danh mục, Hệ thống. Bấm nhóm để sổ / thu chức năng con (nhớ trạng thái); nhãn WMS / WCS cho biết chức năng thuộc app nào; dưới menu là trạng thái WMS / WCS / RCS; **dưới cùng** là nút **Hướng dẫn sử dụng (PDF)** (mở `/huong-dan` = `docs/HUONG_DAN_SU_DUNG.pdf`). Mở thẳng một trang: `/#w_new_id`, `/#c_moves`…
 - **Hộp thoại lựa chọn** thay cho gõ lệnh: bấm ô kệ → hiện thông tin ô và các nút theo trạng thái (Khoá ô, Mở khoá, Làm trống ô, Đặt pallet vào ô…); sửa pallet → chọn trạng thái / vị trí từ danh sách; hủy / xoá / chạy lại / bật tắt line đều hỏi lại kèm hậu quả.
 - **Hướng dẫn sử dụng**: `tools/build_guide.py` chụp các trang thật của site (nền sáng, `?theme=light`) và in `docs/HUONG_DAN_SU_DUNG.pdf` bằng Edge; chạy lại khi giao diện đổi.
 
@@ -222,7 +225,7 @@ Line đang tắt thì WCS B từ chối lệnh mới (201). Lệnh cho line khô
 
 ## 10. Kiểm thử
 
-- `run_tests.bat` (`tests/e2e_test.py`) chạy 21 kịch bản đầu cuối trên cổng và DB riêng:
+- `tools\run_tests.bat` (`tests/e2e_test.py`) chạy 21 kịch bản đầu cuối trên cổng và DB riêng:
   1. Move nhóm 2 bước.
   2. RCS báo lỗi → SKIPPED → chạy lại.
   3. Vị trí sai / robot sai.
