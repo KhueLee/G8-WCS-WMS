@@ -3,7 +3,9 @@
 Mục tiêu cốt lõi: tạo lệnh định danh (sinh mã thùng cho bàn định danh in / quét), trả lời yêu cầu định danh,
 gọi robot cất pallet đầy, lưu pallet / thùng đã định danh để xuất hàng (đầu xuất).
 
-Danh mục: kho (ghép điểm theo tiền tố), sản phẩm (quy cách thùng, quy cách pallet), vị trí (form highbay).
+Danh mục: kho (ghép điểm theo tiền tố), sản phẩm (quy cách thùng, quy cách pallet, chuyền), vị trí (form highbay).
+Lệnh sản xuất: nhập / xuất file Excel định dạng G8, sửa tay; người vận hành bấm "Định danh" để chuyển lệnh sang
+định danh (sinh lệnh định danh PO), lệnh hiện tiến độ theo pallet / thùng, tự "Hoàn thành" khi đủ pallet.
 Lệnh WMS: định danh (PO / ASN), luân chuyển pallet (Move), xuất hàng (DO), cập nhật vị trí (sửa tay, không robot).
 
 WCS -> WMS: Login, Pallet_Location, Finished_Goods, OB_Pallet, Location_Stocks (định dạng {Auth, Data}).
@@ -12,6 +14,7 @@ Chạy: python -m g8b.wms
 """
 from __future__ import annotations
 
+import base64
 import copy
 import logging
 import math
@@ -19,22 +22,24 @@ import os
 import re
 import secrets
 import threading
+import time
 from datetime import timedelta
 from typing import Any
 
 import uvicorn
 from fastapi import FastAPI, Request
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pymongo import ASCENDING, DESCENDING, ReturnDocument
 from pymongo.errors import DuplicateKeyError
 
 from . import locations as L
+from . import prodfiles as F
 from .common import (MsgLog, ROOT, ci_get, clean, deep_merge, hourly, site_port, load_config, mongo_db, now, save_config,
                      setup_logging, today_start)
 from .outbox import Outbox
 
-VERSION = "0.6.0"
+VERSION = "0.7.0"
 
 DEFAULTS: dict = {
     "server": {"host": "0.0.0.0", "port": 9100},
@@ -67,6 +72,9 @@ TYPE_MOVE = {1: "Cất pallet băng tải vào bãi", 2: "Gọi pallet rỗng", 
              13: "Cất pallet NVL dư", 15: "Chuyển vị trí nội bộ"}
 ROBOTS = {1: "Robot nâng hạ (xe nâng)", 2: "Robot đội gầm"}
 PALLET_LIVE = ("PLANNED", "IDENTIFIED", "STORED")
+# lệnh sản xuất: Chờ định danh -> (người vận hành bấm Định danh) Đang định danh -> Hoàn thành; Đã hủy
+PROD_STATUS = {"WAITING": "Chờ định danh", "IDENTIFYING": "Đang định danh", "DONE": "Hoàn thành", "CANCELLED": "Đã hủy"}
+PROD_FIELDS = ("code", "line", "wh_in", "wh_out", "prod_date", "type", "item_code", "note") + F.NUM_KEYS
 
 log = logging.getLogger("wms")
 
@@ -91,6 +99,8 @@ class WMS:
         self.tokens = self.db["tokens"]
         self.counters = self.db["counters"]
         self.events = self.db["events"]
+        self.prod = self.db["prod_orders"]
+        self._pending: dict[str, dict] = {}   # file đã đọc, chờ áp dụng (token -> dữ liệu)
         self._lock = threading.Lock()
         self.fail_next = dict(cfg.get("fail_next", {}))
         self.tokens.create_index("token", unique=True)
@@ -101,6 +111,8 @@ class WMS:
         self.pallets.create_index("location")
         self.pallets.create_index("cartons")
         self.products.create_index("item_code", unique=True)
+        self.prod.create_index("key", unique=True)
+        self.prod.create_index([("status", ASCENDING), ("created_at", DESCENDING)])
         self.events.create_index("t", expireAfterSeconds=30 * 86400)
         if self.products.count_documents({}) == 0:
             for p in SAMPLE_PRODUCTS:
@@ -189,7 +201,7 @@ class WMS:
             doc = {"item_code": code, "item_name": str(b["item_name"]).strip(), "group": str(b.get("group") or ""),
                    "inner_carton": int(b.get("inner_carton") or 0), "inner_pallet": int(b.get("inner_pallet") or 0),
                    "gw": float(b.get("gw") or 0), "nw": float(b.get("nw") or 0), "active": bool(b.get("active", True)),
-                   "note": str(b.get("note") or ""), "updated_at": now()}
+                   "note": str(b.get("note") or ""), "lines": self._lines(b.get("lines")), "updated_at": now()}
         except (TypeError, ValueError):
             return {"ok": False, "msg": "Quy cách / khối lượng phải là số"}
         if doc["inner_carton"] <= 0 or doc["inner_pallet"] <= 0:
@@ -199,6 +211,269 @@ class WMS:
             return {"ok": False, "msg": f"Đã có sản phẩm {code}"}
         self.products.update_one({"item_code": old}, {"$set": doc, "$setOnInsert": {"created_at": now()}}, upsert=True)
         return {"ok": True, "msg": f"Đã lưu sản phẩm {code}"}
+
+    @staticmethod
+    def _lines(v) -> list[str]:
+        items = v if isinstance(v, list) else re.split(r"[,;\n]", str(v or ""))
+        return [x.strip() for x in items if str(x).strip()]
+
+    def _stash(self, data: dict) -> str:
+        """Giữ dữ liệu file vừa đọc để bước "áp dụng" dùng lại (hết hạn sau 30 phút)."""
+        t = time.time()
+        self._pending = {k: v for k, v in self._pending.items() if t - v["t"] < 1800}
+        token = secrets.token_hex(8)
+        self._pending[token] = dict(data, t=t)
+        return token
+
+    def products_import_preview(self, name: str, raw: bytes) -> dict:
+        try:
+            rows = F.read_products(raw)
+        except Exception as e:  # noqa: BLE001 - file lạ: báo lỗi cho người dùng
+            return {"ok": False, "msg": f"Không đọc được file sản phẩm: {e}"}
+        if not rows:
+            return {"ok": False, "msg": "File không có sản phẩm nào"}
+        have = {p["item_code"] for p in self.products.find({}, {"item_code": 1})}
+        new = [r["item_code"] for r in rows if r["item_code"] not in have]
+        spec = sum(1 for r in rows if r.get("inner_carton") or F.carton_spec_from_name(r["item_name"]))
+        return {"ok": True, "token": self._stash({"kind": "products", "rows": rows, "name": name}), "name": name,
+                "total": len(rows), "new": len(new), "update": len(rows) - len(new), "with_spec": spec,
+                "lines": sum(len(r["lines"]) for r in rows), "new_codes": new[:30]}
+
+    def products_import_apply(self, token: str) -> dict:
+        pend = self._pending.pop(token, None)
+        if not pend or pend.get("kind") != "products":
+            return {"ok": False, "msg": "Phiên nạp file đã hết hạn, đọc lại file"}
+        n_new = n_upd = 0
+        for r in pend["rows"]:
+            old = self.products.find_one({"item_code": r["item_code"]})
+            doc = {"item_name": r["item_name"] or (old or {}).get("item_name") or r["item_code"], "lines": r["lines"],
+                   "updated_at": now()}
+            for k in ("inner_carton", "inner_pallet", "gw", "nw", "group", "active"):
+                if k in r and r[k] not in ("", None):
+                    doc[k] = int(r[k]) if k in ("inner_carton", "inner_pallet") else r[k]
+            if not (old or {}).get("inner_carton") and not doc.get("inner_carton"):
+                doc["inner_carton"] = F.carton_spec_from_name(r["item_name"])
+            if old:
+                ins = {"item_code": r["item_code"]}
+                n_upd += 1
+            else:
+                ins = {"item_code": r["item_code"], "created_at": now()}
+                for k, v in (("inner_carton", 0), ("inner_pallet", 0), ("gw", 0), ("nw", 0), ("group", ""),
+                             ("active", True), ("note", "")):
+                    if k not in doc:
+                        ins[k] = v
+                n_new += 1
+            self.products.update_one({"item_code": r["item_code"]}, {"$set": doc, "$setOnInsert": ins}, upsert=True)
+        miss = self.products.count_documents({"$or": [{"inner_carton": {"$lte": 0}}, {"inner_pallet": {"$lte": 0}}]})
+        self.event(f"Nạp file sản phẩm {pend['name']}: {n_new} mới, {n_upd} cập nhật")
+        return {"ok": True, "msg": f"Đã nạp {n_new} sản phẩm mới, cập nhật {n_upd}. {miss} sản phẩm chưa đủ quy cách "
+                                   f"thùng / pallet (cần nhập trước khi định danh)."}
+
+    def products_export(self) -> bytes:
+        return F.write_products(list(self.products.find().sort("item_code", ASCENDING)))
+
+    # ------------------------------------------------------------------ lệnh sản xuất
+    @staticmethod
+    def prod_key(code: str, line: str) -> str:
+        return f"{str(code).strip()}|{F.line_id(line)}"
+
+    def _prod_progress(self, o: dict) -> dict:
+        """Tiến độ định danh của lệnh sản xuất: thùng / pallet đã định danh, pallet đã cất kệ."""
+        ident = o.get("identify") or {}
+        if not ident.get("order_id"):
+            return {}
+        st = {"PLANNED": 0, "IDENTIFIED": 0, "STORED": 0, "SHIPPED": 0, "CANCELLED": 0}
+        ctn_done = 0
+        for p in self.pallets.find({"order_id": ident["order_id"]}, {"status": 1, "cartons": 1, "ctn_done": 1}):
+            st[p["status"]] = st.get(p["status"], 0) + 1
+            if p["status"] in ("IDENTIFIED", "STORED", "SHIPPED"):
+                ctn_done += int(p.get("ctn_done") or len(p.get("cartons") or []))
+        total = sum(v for k, v in st.items() if k != "CANCELLED")
+        done = st["IDENTIFIED"] + st["STORED"] + st["SHIPPED"]
+        plan = int(ident.get("ctn") or 0)
+        return {"ctn_plan": plan, "ctn_done": ctn_done, "pallets": total, "pallets_done": done,
+                "pallets_stored": st["STORED"] + st["SHIPPED"], "pallets_cancelled": st["CANCELLED"],
+                "pct": round(100 * ctn_done / plan) if plan else 0}
+
+    def prod_list(self, status: str = "", q: str = "") -> list[dict]:
+        f: dict = {}
+        if status:
+            f["status"] = {"$in": status.split(",")}
+        if q:
+            rx = {"$regex": re.escape(q), "$options": "i"}
+            f["$or"] = [{"code": rx}, {"item_code": rx}, {"line": rx}, {"note": rx}]
+        out = []
+        prods = {p["item_code"]: p for p in self.products.find({}, {"item_code": 1, "item_name": 1, "inner_carton": 1,
+                                                                   "inner_pallet": 1})}
+        for o in self.prod.find(f).sort([("prod_date_sort", DESCENDING), ("code", DESCENDING)]).limit(2000):
+            o = clean(o)
+            prod = prods.get(o.get("item_code"))
+            o["item_name"] = (prod or {}).get("item_name", "")
+            o["product_ok"] = bool(prod and prod.get("inner_carton", 0) > 0 and prod.get("inner_pallet", 0) > 0)
+            o["product_missing"] = prod is None
+            o["progress"] = self._prod_progress(o)
+            out.append(o)
+        # lệnh đang định danh lên đầu, rồi lệnh chờ; trong nhóm: ngày SX mới trước
+        rank = {"IDENTIFYING": 0, "WAITING": 1, "DONE": 2, "CANCELLED": 3}
+        out.sort(key=lambda o: rank.get(o.get("status"), 9))
+        return out
+
+    @staticmethod
+    def _date_sort(d: str) -> str:
+        m = re.match(r"(\d{1,2})/(\d{1,2})/(\d{4})", d or "")
+        return f"{m.group(3)}{int(m.group(2)):02d}{int(m.group(1)):02d}" if m else ""
+
+    def _prod_doc(self, b: dict) -> dict:
+        doc = {k: str(b.get(k) or "").strip() for k in PROD_FIELDS if k not in F.NUM_KEYS}
+        for k in F.NUM_KEYS:
+            doc[k] = F._num(b.get(k))
+        doc["prod_date"] = F.fmt_date(b.get("prod_date"))
+        doc["line_id"] = F.line_id(doc["line"])
+        doc["prod_date_sort"] = self._date_sort(doc["prod_date"])
+        return doc
+
+    def prod_save(self, b: dict) -> dict:
+        """Thêm / sửa tay lệnh sản xuất. Lệnh đang định danh chỉ sửa được ghi chú."""
+        doc = self._prod_doc(b)
+        if not doc["code"] or not doc["line"] or not doc["item_code"]:
+            return {"ok": False, "msg": "Cần mã lệnh, Line và mã sản phẩm"}
+        if doc["ctn"] <= 0:
+            return {"ok": False, "msg": "Số kiện (số thùng thành phẩm) phải > 0"}
+        key = self.prod_key(doc["code"], doc["line"])
+        old_key = str(b.get("old_key") or key)
+        old = self.prod.find_one({"key": old_key})
+        if old_key != key and self.prod.find_one({"key": key}):
+            return {"ok": False, "msg": f"Đã có lệnh {doc['code']} trên line {doc['line_id']}"}
+        if old and old["status"] == "IDENTIFYING":
+            self.prod.update_one({"_id": old["_id"]}, {"$set": {"note": doc["note"], "updated_at": now()}})
+            return {"ok": True, "msg": "Lệnh đang định danh: chỉ lưu ghi chú"}
+        status = str(b.get("status") or (old or {}).get("status") or "WAITING")
+        if status not in ("WAITING", "DONE", "CANCELLED"):
+            return {"ok": False, "msg": "Trạng thái sửa tay chỉ được: Chờ định danh / Hoàn thành / Đã hủy"}
+        doc.update(key=key, status=status, updated_at=now())
+        if old:
+            self.prod.update_one({"_id": old["_id"]}, {"$set": doc})
+        else:
+            self.prod.insert_one(dict(doc, source="manual", status_text="", created_at=now()))
+        self.event(f"{'Sửa' if old else 'Thêm'} tay lệnh sản xuất {doc['code']} line {doc['line_id']}")
+        return {"ok": True, "msg": f"Đã lưu lệnh {doc['code']}", "key": key}
+
+    def prod_delete(self, key: str) -> dict:
+        o = self.prod.find_one({"key": key})
+        if not o:
+            return {"ok": False, "msg": "Không có lệnh"}
+        if o["status"] == "IDENTIFYING":
+            return {"ok": False, "msg": "Lệnh đang định danh - hủy định danh trước khi xoá"}
+        self.prod.delete_one({"_id": o["_id"]})
+        self.event(f"Xoá lệnh sản xuất {o['code']} line {o.get('line_id')}")
+        return {"ok": True, "msg": f"Đã xoá lệnh {o['code']}"}
+
+    def prod_start(self, key: str, line_id: str = "", ctn: int = 0, mfg_date: str = "", dest_wh: str = "") -> dict:
+        """Người vận hành chuyển lệnh sang định danh: sinh lệnh định danh PO (PO_Name = mã lệnh sản xuất)."""
+        o = self.prod.find_one({"key": key})
+        if not o:
+            return {"ok": False, "msg": "Không có lệnh"}
+        if o["status"] != "WAITING":
+            return {"ok": False, "msg": f"Lệnh đang ở trạng thái {PROD_STATUS.get(o['status'], o['status'])}, "
+                                        "chỉ lệnh Chờ định danh mới chuyển sang định danh được"}
+        prod = self.products.find_one({"item_code": o["item_code"]})
+        if not prod:
+            return {"ok": False, "msg": f"Sản phẩm {o['item_code']} chưa có trong danh mục"}
+        line_id = line_id or o.get("line_id", "")
+        ctn = int(ctn or o.get("ctn") or 0)
+        r = self.create_identify("PO", line_id, o["item_code"], ctn, mfg_date or o.get("prod_date", ""), dest_wh,
+                                 o["code"], prod_key=key)
+        if not r["ok"]:
+            return r
+        self.prod.update_one({"_id": o["_id"]}, {"$set": {
+            "status": "IDENTIFYING", "updated_at": now(),
+            "identify": {"order_id": r["order_id"], "po_id": r["po_id"], "line_id": line_id, "ctn": ctn,
+                         "pallets": r["pallets"], "started_at": now()}}})
+        self.event(f"Lệnh sản xuất {o['code']} chuyển sang định danh tại {line_id}: {ctn} thùng = {r['pallets']} pallet")
+        return dict(r, msg=f"Lệnh {o['code']} đang định danh tại {line_id}: {r['pallets']} pallet")
+
+    def prod_cancel(self, key: str) -> dict:
+        o = self.prod.find_one({"key": key})
+        if not o or o["status"] != "IDENTIFYING":
+            return {"ok": False, "msg": "Lệnh không ở trạng thái đang định danh"}
+        r = self.cancel_identify(int(o["identify"]["po_id"]))
+        self.prod.update_one({"_id": o["_id"]}, {"$set": {"status": "CANCELLED", "updated_at": now()}})
+        return dict(r, msg=f"Đã hủy định danh lệnh {o['code']}: " + r.get("msg", ""))
+
+    def _prod_identified(self, order: dict):
+        """Gọi khi lệnh định danh có thêm pallet xong: đủ pallet thì lệnh sản xuất Hoàn thành."""
+        key = order.get("prod_key")
+        if key and order.get("status") == "COMPLETED":
+            if self.prod.update_one({"key": key, "status": "IDENTIFYING"},
+                                    {"$set": {"status": "DONE", "done_at": now(), "updated_at": now()}}).modified_count:
+                self.event(f"Lệnh sản xuất {order.get('po_name')} định danh xong")
+
+    def orders_import_preview(self, name: str, raw: bytes) -> dict:
+        try:
+            rows = F.read_orders(raw)
+        except Exception as e:  # noqa: BLE001
+            return {"ok": False, "msg": f"Không đọc được file lệnh sản xuất: {e}"}
+        if not rows:
+            return {"ok": False, "msg": "File không có lệnh nào"}
+        groups: dict[str, dict] = {}
+        have = {o["key"]: o["status"] for o in self.prod.find({}, {"key": 1, "status": 1})}
+        prods = {p["item_code"] for p in self.products.find({}, {"item_code": 1})}
+        for r in rows:
+            st = r["status_text"] or "(trống)"
+            g = groups.setdefault(st, {"status_text": st, "count": 0, "new": 0, "exists": 0, "busy": 0,
+                                       "waiting": F.STATUS_IN.get(F._key(st)) == "WAITING"})
+            g["count"] += 1
+            cur = have.get(self.prod_key(r["code"], r["line"]))
+            if cur is None:
+                g["new"] += 1
+            elif cur == "WAITING":
+                g["exists"] += 1
+            else:
+                g["busy"] += 1
+        miss = sorted({r["item_code"] for r in rows if F.STATUS_IN.get(F._key(r["status_text"])) == "WAITING"
+                       and r["item_code"] and r["item_code"] not in prods})
+        return {"ok": True, "token": self._stash({"kind": "orders", "rows": rows, "name": name}), "name": name,
+                "total": len(rows), "groups": sorted(groups.values(), key=lambda g: -g["count"]), "missing_products": miss}
+
+    def orders_import_apply(self, token: str, statuses: list[str]) -> dict:
+        """Nạp các dòng có trạng thái được chọn (mặc định Kế hoạch / Đang sản xuất) vào B ở trạng thái Chờ định danh.
+        Lệnh đã có (cùng mã + line) đang chờ thì cập nhật; đang định danh / xong thì giữ nguyên."""
+        pend = self._pending.pop(token, None)
+        if not pend or pend.get("kind") != "orders":
+            return {"ok": False, "msg": "Phiên nạp file đã hết hạn, đọc lại file"}
+        want = {F._key(x) for x in statuses}
+        n_new = n_upd = n_skip = n_busy = 0
+        for r in pend["rows"]:
+            if F._key(r["status_text"] or "(trống)") not in want:
+                n_skip += 1
+                continue
+            doc = self._prod_doc(r)
+            key = self.prod_key(doc["code"], doc["line"])
+            old = self.prod.find_one({"key": key})
+            if old and old["status"] != "WAITING":
+                n_busy += 1
+                continue
+            doc.update(key=key, status="WAITING", status_text=r["status_text"], source=pend["name"], updated_at=now())
+            if old:
+                self.prod.update_one({"_id": old["_id"]}, {"$set": doc})
+                n_upd += 1
+            else:
+                self.prod.insert_one(dict(doc, created_at=now()))
+                n_new += 1
+            self._learn_carton_spec(doc)
+        self.event(f"Nạp file lệnh sản xuất {pend['name']}: {n_new} mới, {n_upd} cập nhật, bỏ qua {n_skip + n_busy}")
+        return {"ok": True, "msg": f"Đã nạp {n_new} lệnh mới, cập nhật {n_upd} lệnh chờ; bỏ qua {n_skip} dòng khác trạng thái"
+                                   + (f", {n_busy} lệnh đang định danh / đã xong" if n_busy else "")}
+
+    def _learn_carton_spec(self, doc: dict):
+        """Sản phẩm chưa có quy cách thùng: lấy Tổng SL / Số kiện của lệnh sản xuất (nếu chia hết)."""
+        ctn, qty = doc.get("ctn") or 0, doc.get("qty_total") or 0
+        if ctn > 0 and qty > 0 and qty % ctn == 0:
+            self.products.update_one({"item_code": doc["item_code"], "inner_carton": {"$lte": 0}},
+                                     {"$set": {"inner_carton": int(qty // ctn), "updated_at": now()}})
+
+    def orders_export(self, status: str = "") -> bytes:
+        return F.write_orders(self.prod_list(status))
 
     def product_delete(self, code: str) -> dict:
         if self.pallets.count_documents({"item_code": code, "status": {"$in": list(PALLET_LIVE)}}):
@@ -220,7 +495,7 @@ class WMS:
         return f"{self.cfg['codes']['po_prefix']}-{d}-{self.seq('po_name_' + d)}"
 
     def create_identify(self, kind: str, line_id: str, item_code: str, ctn_total: int, mfg_date: str = "",
-                        dest_wh: str = "", po_name: str = "") -> dict:
+                        dest_wh: str = "", po_name: str = "", prod_key: str = "") -> dict:
         """Lệnh định danh (đi đôi với lệnh sản xuất): sinh mã thùng, chia pallet theo quy cách, giữ chỗ ô cất."""
         prod = self.products.find_one({"item_code": item_code})
         if not prod:
@@ -230,7 +505,9 @@ class WMS:
         ctn_total = int(ctn_total)
         if ctn_total <= 0:
             return {"ok": False, "msg": "Số thùng phải > 0"}
-        per = prod["inner_pallet"]
+        per = int(prod.get("inner_pallet") or 0)
+        if per <= 0 or int(prod.get("inner_carton") or 0) <= 0:
+            return {"ok": False, "msg": f"Sản phẩm {item_code} chưa có quy cách thùng / pallet (Danh mục → Sản phẩm)"}
         n_pal = math.ceil(ctn_total / per)
         dest_wh = dest_wh or self.store_wh()
         if not self.wh(dest_wh):
@@ -270,7 +547,7 @@ class WMS:
         self.orders.insert_one({"order_id": order_id, "kind": kind, "po_id": po_id, "po_name": name,
                                 "line_id": line_id, "item_code": item_code, "ctn_total": ctn_total, "dest_wh": dest_wh,
                                 "pallets": [i["Pallet_ID"] for i in items], "done": [], "status": "SENT",
-                                "created_at": now()})
+                                "prod_key": prod_key, "created_at": now()})
         self.send(path, body, order_id)
         self.event(f"Tạo lệnh định danh {name} ({kind} {po_id}) line {line_id}: {item_code} {ctn_total} thùng "
                    f"= {n_pal} pallet, cất kho {dest_wh}")
@@ -525,6 +802,7 @@ class WMS:
             if o["status"] in ("CANCEL_SENT",):
                 st = o["status"]
             self.orders.update_one({"_id": o["_id"]}, {"$set": {"status": st}})
+            self._prod_identified(dict(o, status=st))
         self.event(f"Pallet {pid} định danh xong ({ctn} thùng) tại {line}")
         loc = p.get("assigned_location") or ""
         if first and self.cfg["auto_putaway"] and station and loc:
@@ -554,8 +832,9 @@ class WMS:
     def location_stocks(self, d: dict) -> dict:
         loc = L.norm(ci_get(d, "Location", default=""))
         x = self.locs.find_one({"code": loc})
-        occupied = (not x) or x["state"] in (L.FULL, L.BUSY, L.LOCKED) or bool(x.get("task"))
-        # Status = true: có hàng / không dùng được; false: ô trống -> WCS được đổi đích sang đây
+        mine = f"reserve:{ci_get(d, 'Pallet_ID', default='')}"   # ô đang giữ chỗ cho chính pallet hỏi -> coi là trống
+        occupied = (not x) or x["state"] in (L.FULL, L.BUSY, L.LOCKED) or bool(x.get("task") and x["task"] != mine)
+        # Status = true: có hàng / không dùng được; false: ô trống -> WCS được đổi đích / đưa pallet vào
         return tke(True, data={"Task_ID": ci_get(d, "Task_ID", default=""), "Location_ID": 0, "Location": loc,
                                "Status": occupied})
 
@@ -699,7 +978,7 @@ def build_app(w: WMS) -> FastAPI:
 
     @app.get("/api/config")
     def api_cfg():
-        return {"stations": w.cfg["stations"], "version": VERSION, "store_zone": w.store_wh(),
+        return {"stations": w.cfg["stations"], "version": VERSION, "store_zone": w.store_wh(), "prod_status": PROD_STATUS,
                 "warehouses": w.locstore.wh.all(), "type_move": TYPE_MOVE, "robots": ROBOTS}
 
     @app.post("/api/identify")
@@ -748,6 +1027,68 @@ def build_app(w: WMS) -> FastAPI:
     @app.post("/api/products/delete")
     async def ui_product_delete(req: Request):
         return w.product_delete((await body(req)).get("item_code", ""))
+
+    def xlsx(data: bytes, name: str) -> Response:
+        return Response(data, headers={"Content-Disposition": f'attachment; filename="{name}"'},
+                        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+    def b64(b: dict) -> bytes:
+        return base64.b64decode((b.get("b64") or "").split(",")[-1])
+
+    def stamp() -> str:
+        return now().strftime("%y%m%d%H%M%S")
+
+    @app.get("/api/products/export")
+    def ui_products_export():
+        return xlsx(w.products_export(), f"G8B_San_Pham_{stamp()}.xlsx")
+
+    @app.post("/api/products/import/preview")
+    async def ui_products_preview(req: Request):
+        b = await body(req)
+        return w.products_import_preview(b.get("name", ""), b64(b))
+
+    @app.post("/api/products/import/apply")
+    async def ui_products_apply(req: Request):
+        return w.products_import_apply((await body(req)).get("token", ""))
+
+    @app.get("/api/prod")
+    def ui_prod(status: str = "", q: str = ""):
+        return w.prod_list(status, q)
+
+    @app.post("/api/prod")
+    async def ui_prod_save(req: Request):
+        return w.prod_save(await body(req))
+
+    @app.post("/api/prod/delete")
+    async def ui_prod_delete(req: Request):
+        return w.prod_delete((await body(req)).get("key", ""))
+
+    @app.post("/api/prod/start")
+    async def ui_prod_start(req: Request):
+        b = await body(req)
+        try:
+            return w.prod_start(b.get("key", ""), b.get("line_id", ""), int(b.get("ctn") or 0), b.get("mfg_date", ""),
+                                b.get("dest_wh", ""))
+        except (TypeError, ValueError) as e:
+            return {"ok": False, "msg": str(e)}
+
+    @app.post("/api/prod/cancel")
+    async def ui_prod_cancel(req: Request):
+        return w.prod_cancel((await body(req)).get("key", ""))
+
+    @app.get("/api/prod/export")
+    def ui_prod_export(status: str = ""):
+        return xlsx(w.orders_export(status), f"G8B_San_Xuat_{stamp()}.xlsx")
+
+    @app.post("/api/prod/import/preview")
+    async def ui_prod_preview(req: Request):
+        b = await body(req)
+        return w.orders_import_preview(b.get("name", ""), b64(b))
+
+    @app.post("/api/prod/import/apply")
+    async def ui_prod_apply(req: Request):
+        b = await body(req)
+        return w.orders_import_apply(b.get("token", ""), b.get("statuses") or [])
 
     @app.post("/api/pallets/create")
     async def ui_pallet_create(req: Request):

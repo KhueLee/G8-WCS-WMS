@@ -1,8 +1,9 @@
-# Báo cáo test – G8 luồng B v0.6.0 (25/11/2026)
+# Báo cáo test – G8 luồng B v0.7.0 (25/11/2026)
 
 **Máy test:** Windows 11, MongoDB 4.4.29 (mongod kèm theo); chạy trên **Python 3.10.22** (như máy đích) và **Python 3.13**.
 **Kết quả lượt cuối:**
-- v0.6.0: **24/24 PASS trên cả Python 3.10 và 3.13** (22 kịch bản đầu cuối + 2 với phần mềm trạm thật). Với Python 3.10: `install.bat` tạo `.venv` 3.10 và kiểm tra 0 lỗi, `run.bat demo` chạy đủ thành phần. Thêm thử tay 3 file bat: `run.bat stop` / `run.bat demo` / `run.bat status`, tự chạy lại khi tắt cứng WMS (lên lại sau 5 giây), `update.bat` trên bản sao lùi về v0.5.0 (cập nhật được, giữ cấu hình sửa tay kể cả file có BOM, lần 2 báo đã mới nhất).
+- v0.7.0: **26/26 PASS** (23 kịch bản đầu cuối + 3 với phần mềm trạm thật, gồm **2 bàn G8-ID chạy song song**).
+- v0.6.0: 24/24 PASS trên cả Python 3.10 và 3.13** (22 kịch bản đầu cuối + 2 với phần mềm trạm thật). Với Python 3.10: `install.bat` tạo `.venv` 3.10 và kiểm tra 0 lỗi, `run.bat demo` chạy đủ thành phần. Thêm thử tay 3 file bat: `run.bat stop` / `run.bat demo` / `run.bat status`, tự chạy lại khi tắt cứng WMS (lên lại sau 5 giây), `update.bat` trên bản sao lùi về v0.5.0 (cập nhật được, giữ cấu hình sửa tay kể cả file có BOM, lần 2 báo đã mới nhất).
 - v0.5.0: 23/23 PASS (21 kịch bản đầu cuối + 2 với phần mềm trạm thật).
 - v0.4.0: 22/22 PASS (20 kịch bản đầu cuối + 2 với phần mềm trạm thật).
 - v0.3.0: 20/20 PASS (18 kịch bản đầu cuối + 2 với phần mềm trạm thật), MongoDB của B ở cổng 27018.
@@ -39,6 +40,7 @@ Hệ thống được dựng trên cổng và DB riêng (`e2e_*`):
 | s19 | Nạp file RAW (bố cục "2500 RAW") | 139 điểm S02 / C24 / C25 / D32; xem trước đếm theo kho (C 80, D 40, kho mới); chọn S02 tất cả + C 50 → 69 điểm; diff báo S02-259-2 bị xoá kèm pallet LPN-CASCADE; áp dụng tạo kho C, D; pallet bị xoá theo; WCS tự nạp lại danh sách mới | PASS |
 | s20 | Danh mục + 4 loại lệnh WMS + sửa tay | Sản phẩm sai quy cách bị từ chối; định danh 7 thùng / quy cách 5 → 2 pallet (5 + 2), giữ ô kho C, robot cất; luân chuyển bằng robot; cập nhật vị trí tay (không gửi WCS), không đè ô có pallet khác; khoá / làm trống ô; tạo / sửa / xoá pallet tay; xuất 3 thùng; tồn kho C còn 4 thùng; không xoá sản phẩm còn tồn | PASS |
 | s22 | Mã vị trí dạng TKELog + robot kho S | Bản tin move_pallet gửi `Location_New` = `S02.251.2` (dấu chấm như TKELog) → WCS B lưu `S02-251-2`, gọi RCS, task SUCCEEDED, ô FULL. Kho tự tạo khi nạp file: S / S02 robot 2 (đội gầm), C / A robot 1 | PASS |
+| s23 | Lệnh sản xuất + sản phẩm (file G8) | File SP 3 cột (1 mã 2 chuyền) → nạp, quy cách thùng lấy từ tên; xuất SP giữ 3 cột đầu, đọc lại. File lệnh SX 2 dòng tiêu đề, trạng thái Kế hoạch / Đang SX / Kết thúc → nạp 2 lệnh chờ, bỏ Kết thúc; học quy cách thùng = Tổng SL / Số kiện. Thiếu quy cách pallet → Định danh bị từ chối; đủ → 3 pallet, tiến độ tăng dần → Hoàn thành 5/5 thùng, 3 pallet cất kho C. Dời tay pallet (WCS không biết) rồi gọi robot vào ô đó → WCS hỏi Location_Stocks, đồng bộ, robot chạy. Sửa tay, xuất lệnh chờ (đúng nhóm cột H1 / L1), xoá; thêm lệnh tay → Định danh → Hủy định danh | PASS |
 | s21 | Site giao diện chung :5510 | Trang chính có logo + nút hướng dẫn; chuyển tiếp GET / POST / file Excel tới WMS và WCS; xuất RAW đúng bố cục (Sheet1, mã cột K, rack G, cột H, tầng I) và đọc lại được; trang "/" của 2 app trả 307 về site; `/huong-dan` trả PDF; tắt WCS thì site trả 502 kèm thông báo | PASS |
 | s14 | Hai task cùng ô đích | Task 2 chờ khi ô đang BUSY; ô FULL → task 2 FAILED (ô kệ phải trống) | PASS |
 
@@ -48,6 +50,7 @@ Hệ thống được dựng trên cổng và DB riêng (`e2e_*`):
 |---|---|---|---|---|
 | m01 | **G8-Export** (main, 26/10) | App thật; PLC và camera dùng driver `simulator`. `UrlScs` / `UrlWms` trỏ về WCS B (chỉ đổi cấu hình). Thùng đi qua bằng `tools.simulator box` (2 camera gửi mã qua TCP) | G8-Export nhận `/scs/orderTask` (code 1000), quét 4 thùng, báo 2 pallet về `/export-service/scs/taskStatusReport`. WCS B báo `OB_Pallet`, DO `COMPLETED` | PASS |
 | m02 | **G8-ID v2.4.12** | App thật ở **MANUAL** cùng công cụ mô phỏng của G8-ID; công nhân ảo tự đặt thùng và bấm ĐỊNH DANH. WCS B gửi lệnh vào cổng 8500 | G8-ID nhận 2 `orderTask` (1000 SUCCESS); cân 1635 g (chuẩn 1637 ± 100), in tem, đọc lại khớp mã; chốt 2 pallet. WCS B báo `Finished_Goods` và gửi `confirm_product` (HTTP 200) | PASS |
+| m03 | 2 bàn G8-ID thật song song + lệnh sản xuất | 2 bản G8-ID (MANUAL + công cụ mô phỏng) MCSX001 / MCSX005, tự khai vào WCS / WMS; nạp 2 lệnh SX bằng file G8; bấm Định danh cả 2; mỗi bàn chỉ nhận orderTask của mình; tiến độ thấy 1/2 pallet giữa chừng, tăng dần → Hoàn thành; 4 pallet được cất. Sản phẩm GW 2,1 kg: công nhân ảo đặt thùng đúng khối lượng chuẩn (G8-ID báo NG nếu sai) | PASS |
 
 Ghi chú về m02: ở MANUAL, G8-ID gửi `pallet_identify_done` về công cụ mô phỏng của chính nó (thiết kế của G8-ID). Vì vậy test chuyển tiếp nguyên body đó sang WCS B. Ở AUTO, trạm gửi thẳng tới `pallet_done_url`, tức là URL đổi lúc cutover.
 

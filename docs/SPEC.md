@@ -1,4 +1,4 @@
-# G8 luồng B – Spec WMS ảo + WCS B (v0.6.0, 25/11/2026)
+# G8 luồng B – Spec WMS ảo + WCS B (v0.7.0, 25/11/2026)
 
 Tài liệu mô tả đúng hành vi của mã nguồn trong repo này (`g8b/`). Các quyết định đã chốt với Lee: `TODO.md`.
 
@@ -76,7 +76,7 @@ WCS B trả HTTP 200 kèm:
 | Xác nhận Move | `/API/G8/Customer/Update/Pallet_Location` | Payload Move gốc kèm `status: "success" \| "false"` |
 | Pallet định danh xong | `/API/G8/Customer/Update/Finished_Goods` | `{PO_ID \| ASN_ID, WH_Code, Line_ID, Pallet_ID, Ctn}`. WMS trả `data.Location` = ô cất pallet |
 | Pallet đã xuất | `/API/G8/Customer/Update/OB_Pallet` | `{DO_ID, WH_Code, Conveyor_Belt, Item_Information:[{Pallet_ID, Item_Code, Ctn, Carton_List}]}` |
-| Hỏi ô trống | `/API/G8/Customer/Update/Location_Stocks` | `{WH_Code, Task_ID, Location}` → `data.Status`: `false` = trống |
+| Hỏi ô trống | `/API/G8/Customer/Update/Location_Stocks` | `{WH_Code, Task_ID, Location, Pallet_ID}` → `data.Status`: `false` = trống (ô đang giữ chỗ cho chính `Pallet_ID` tính là trống). WCS B gọi ngay khi ô đích ghi "có hàng" trong sổ WCS mà không có task: WMS báo trống thì WCS đồng bộ ô và cho robot chạy, kèm cảnh báo INFO (vd. pallet được dời tay / kiểm kê trên WMS) |
 
 ## 5. Device API (không đổi so với WCS gốc)
 
@@ -213,7 +213,16 @@ Line đang tắt thì WCS B từ chối lệnh mới (201). Lệnh cho line khô
 
 ## 9b. WMS ảo – danh mục và lệnh
 
-- **Sản phẩm** (`/api/products`): mã, tên, nhóm, quy cách thùng (chiếc/thùng), quy cách pallet (thùng/pallet), GW / NW kg/thùng, dùng / ngừng. Không xoá được sản phẩm còn tồn.
+- **Sản phẩm** (`/api/products`): mã, tên, nhóm, **chuyền** (danh sách), quy cách thùng (chiếc/thùng), quy cách pallet (thùng/pallet), GW / NW kg/thùng (GW = khối lượng chuẩn G8-ID dùng để cân), dùng / ngừng. Không xoá được sản phẩm còn tồn.
+  - **Nhập / xuất file** theo file G8 `CKHC_G8_BOM_Linh_Kien_Chuyen_San_Xuat_Export_*.xlsx` (`g8b/prodfiles.py`): dòng 1 `Mã BOM | Tên BOM | Chuyền`, mỗi dòng một cặp mã – chuyền (gộp theo mã). `POST /api/products/import/preview` (`{name, b64}` → số SP mới / cập nhật / có quy cách) → `import/apply` (`{token}`). SP đã có: cập nhật tên, chuyền; giữ quy cách. Quy cách thùng lấy từ tên `(48c/T)` nếu chưa có.
+  - `GET /api/products/export`: giữ đúng 3 cột đầu, thêm cột quy cách (chiếc/thùng, thùng/pallet, GW, NW, nhóm, dùng) – nạp lại được.
+- **Lệnh sản xuất** (`/api/prod`, collection `prod_orders`, khoá = mã lệnh + Line_ID vì một mã lệnh có thể chạy nhiều line):
+  - Trạng thái: `WAITING` Chờ định danh → `IDENTIFYING` Đang định danh → `DONE` Hoàn thành; `CANCELLED` Đã hủy.
+  - **Nhập file** G8 `CKHC_G8_San_Xuat_Export_*.xlsx`: dòng 1 nhóm cột (H "Thành phẩm", L "Nguyên phụ liệu"), dòng 2 tiêu đề 17 cột (Lệnh sản xuất, Kho Nhập TP, Kho xuất, Ngày Sản Xuất, Line, Trạng thái, Loại hình SX, Số Kiện / SL Chẵn / SL Lẻ / Tổng SL ×2, Mã SP Group, Ghi Chú), dữ liệu từ dòng 3. `import/preview` đếm dòng theo trạng thái trong file → `import/apply {token, statuses}` nạp các trạng thái chọn (mặc định Kế hoạch, Đang sản xuất) vào `WAITING`; lệnh đã có đang chờ thì cập nhật, đang định danh / xong thì giữ. Sản phẩm chưa có quy cách thùng học từ `Tổng SL / Số Kiện`.
+  - **Xuất file** `GET /api/prod/export?status=` đúng bố cục trên; cột Trạng thái: Kế hoạch (chờ) / Đang định danh / Hoàn thành / Đã hủy.
+  - **Sửa tay** `POST /api/prod` (thêm / sửa; lệnh đang định danh chỉ sửa ghi chú; trạng thái tay: chờ / hoàn thành / hủy), `POST /api/prod/delete` (không xoá lệnh đang định danh).
+  - **Định danh** `POST /api/prod/start {key, line_id?, ctn?, mfg_date?, dest_wh?}`: người vận hành chuyển lệnh sang định danh → tạo lệnh định danh PO (`PO_Name` = mã lệnh sản xuất, bàn mặc định = Line của lệnh, số thùng = Số Kiện, NSX = Ngày SX). Cần sản phẩm có đủ quy cách thùng / pallet.
+  - **Tiến độ** (trong `GET /api/prod`): `ctn_done / ctn_plan`, `pallets_done / pallets`, `pallets_stored`, `pct`, tính từ pallet của lệnh định danh. Đủ pallet (`Finished_Goods` cuối) → `DONE`. `POST /api/prod/cancel` = hủy lệnh định danh (nhả ô pallet chưa làm) → `CANCELLED`. Danh sách xếp lệnh đang định danh lên đầu.
 - **Lệnh định danh** (`POST /api/identify`, đi đôi với lệnh sản xuất – B không theo dõi sản xuất nên tạo thẳng lệnh định danh):
   - Chọn PO (thành phẩm) / ASN (thương mại), line, sản phẩm, số thùng kế hoạch, NSX, kho cất. Tên lệnh tự sinh `VAS-ddmmyy-n` (đánh số lại mỗi ngày như TKELog).
   - WMS chia pallet theo quy cách pallet (pallet cuối lẻ), sinh mã thùng `ITEM|||||||<chiếc/thùng>|0|<mã>||001||||||||<stt>`, giữ chỗ ô trống trong kho cất, gửi WCS.
@@ -226,7 +235,7 @@ Line đang tắt thì WCS B từ chối lệnh mới (201). Lệnh cho line khô
 
 ## 10. Kiểm thử
 
-- `tools\run_tests.bat` (`tests/e2e_test.py`) chạy 22 kịch bản đầu cuối trên cổng và DB riêng:
+- `tools\run_tests.bat` (`tests/e2e_test.py`) chạy 23 kịch bản đầu cuối trên cổng và DB riêng:
   1. Move nhóm 2 bước.
   2. RCS báo lỗi → SKIPPED → chạy lại.
   3. Vị trí sai / robot sai.
@@ -249,7 +258,9 @@ Line đang tắt thì WCS B từ chối lệnh mới (201). Lệnh cho line khô
   20. Danh mục sản phẩm, 4 loại lệnh WMS, sửa tay pallet / ô.
   21. Site giao diện chung (chuyển tiếp API, xuất RAW, hướng dẫn PDF, báo lỗi khi app tắt).
   22. Bản tin dạng TKELog có mã vị trí dấu "." được đổi sang "-"; kho S tự tạo có robot đội gầm.
-- `tests/g8_modules_test.py` test với phần mềm trạm thật ở chế độ mô phỏng (G8-Export, G8-ID). Kết quả ghi ở `docs/TEST_REPORT.md`.
+  23. Nhập / xuất file sản phẩm và lệnh sản xuất định dạng G8, thiếu quy cách thì chưa định danh được, Định danh → tiến độ tăng dần → Hoàn thành → cất kho; ô WCS ghi đầy nhưng WMS đã dời tay → đồng bộ qua Location_Stocks; sửa / xuất / xoá; hủy định danh.
+- `tests/g8_modules_test.py` test với phần mềm trạm thật ở chế độ mô phỏng: m01 G8-Export, m02 1 bàn G8-ID, **m03 2 bàn G8-ID chạy song song** (`tools/g8id_desks.py`: mỗi bàn một bản chép G8-ID-Deploy, cổng 8500+n / 8600+n / 8700+n, MANUAL + công cụ mô phỏng, công nhân ảo đặt thùng đúng khối lượng chuẩn bàn đang chờ; cầu nối chuyển `pallet_identify_done` sang WCS B). Kết quả ghi ở `docs/TEST_REPORT.md`.
+- Demo 2 bàn: `run.bat demo` rồi `tools\run_g8id_demo.bat` (bàn MCSX001 điểm sàn BDD01, MCSX005 điểm sàn BDD05; tự khai vào cấu hình WCS / WMS).
 
 ## 11. Chưa làm / còn mở
 

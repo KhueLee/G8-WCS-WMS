@@ -59,7 +59,7 @@ exit /b 0
 
 :sims
 rem Mo phong: RCS gia 7100, ban dinh danh gia MCSX009 9501, bang tai xuat gia BCXB001 9701
-"%PY%" -m g8b.ctl up 7100 || start "G8B SIM RCS" /min "%PY%" -m g8b.sim rcs --port 7100 --callback http://127.0.0.1:%WCP%/rcs/taskStatusReport --points config\locations.xlsx --extra-points BDD09,BCXB01
+"%PY%" -m g8b.ctl up 7100 || start "G8B SIM RCS" /min "%PY%" -m g8b.sim rcs --port 7100 --callback http://127.0.0.1:%WCP%/rcs/taskStatusReport --points config\locations.xlsx --extra-points BDD01,BDD02,BDD03,BDD04,BDD05,BDD06,BDD07,BDD08,BDD09,BDD10,BDD11,BDD12,BCXB01,BCXB02,BCXB03
 "%PY%" -m g8b.ctl up 9501 || start "G8B SIM IDS MCSX009" /min "%PY%" -m g8b.sim ids --port 9501 --line MCSX009 --done-url http://127.0.0.1:%WCP%/identify-service/ids/pallet_identify_done
 "%PY%" -m g8b.ctl up 9701 || start "G8B SIM SCS BCXB001" /min "%PY%" -m g8b.sim scs --port 9701 --line BCXB001 --report-url http://127.0.0.1:%WCP%/export-service/scs/taskStatusReport
 echo   [OK] Mo phong: RCS http://127.0.0.1:7100  Ban dinh danh http://127.0.0.1:9501  Bang tai http://127.0.0.1:9701

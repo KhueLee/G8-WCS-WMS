@@ -19,7 +19,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .common import ROOT, load_config, setup_logging
 
-VERSION = "0.6.0"
+VERSION = "0.7.0"
 DEFAULTS: dict = {
     "server": {"host": "0.0.0.0", "port": 5510},
     "wms_url": "http://127.0.0.1:9100",

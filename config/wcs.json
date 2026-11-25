@@ -52,6 +52,20 @@
       "location": "BDD09",
       "enabled": true,
       "name": "Bàn định danh 9 (simulator)"
+    },
+    {
+      "line_id": "MCSX001",
+      "url": "http://127.0.0.1:8500/ids",
+      "location": "BDD01",
+      "enabled": true,
+      "name": "G8-ID mô phỏng MCSX001"
+    },
+    {
+      "line_id": "MCSX005",
+      "url": "http://127.0.0.1:8501/ids",
+      "location": "BDD05",
+      "enabled": true,
+      "name": "G8-ID mô phỏng MCSX005"
     }
   ],
   "export_lines": [

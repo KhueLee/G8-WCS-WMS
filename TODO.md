@@ -1,6 +1,6 @@
 # TODO – Luồng B (WMS ảo + WCS ảo) – cập nhật 24/11/2026
 
-Trạng thái: **v0.6.0 (25/11/2026)**; Lee duyệt viết spec + code + test từ 24/11. v0.1.0 xong ngày 24/11: spec `docs/SPEC.md`, code `g8b/`, test `docs/TEST_REPORT.md`.
+Trạng thái: **v0.7.0 (25/11/2026)**; Lee duyệt viết spec + code + test từ 24/11. v0.1.0 xong ngày 24/11: spec `docs/SPEC.md`, code `g8b/`, test `docs/TEST_REPORT.md`.
 
 ## Đã chốt (Lee, 24/11/2026)
 - Luồng B chạy **hàng và kệ thật**, có **chia zone** riêng cho B.
@@ -61,7 +61,15 @@ Trạng thái: **v0.6.0 (25/11/2026)**; Lee duyệt viết spec + code + test t�
 - [x] Gom còn 3 file bat: `install.bat`, `run.bat`, `update.bat` (+ `g8b/ctl.py`).
 - [x] Lee chốt 25/11: TKELog dùng mã vị trí dấu `.`, luồng B dùng `-`, bản tin từ TKELog tự đổi sang `-` (test s22). Kho S chỉ dùng robot đội gầm (latent) = 2.
 
+## v0.7 (25/11)
+- [x] Nhập / xuất file danh sách sản phẩm và lệnh sản xuất đúng định dạng file G8; sửa tay lệnh sản xuất, sản phẩm (thêm chuyền).
+- [x] Người vận hành bấm Định danh trên lệnh sản xuất → lệnh định danh; tiến độ (thùng / pallet / đã cất) tự cập nhật; đủ pallet → Hoàn thành.
+- [x] WCS hỏi WMS `Location_Stocks` khi ô đích lệch sổ (pallet dời tay) thay vì báo lỗi.
+- [x] Hướng dẫn PDF: quy trình vận hành của nhân công, sơ đồ luồng vận hành, mục Lệnh sản xuất, chạy thử 2 bàn.
+- [x] Chạy 2 bàn G8-ID thật ở chế độ mô phỏng phối hợp WMS / WCS (`tools/g8id_desks.py`, `tools\run_g8id_demo.bat`, test m03).
+
 ## Còn lại
+- [ ] Quy cách pallet (thùng/pallet) của sản phẩm G8 thật: file danh sách sản phẩm không có cột này – cần nhập tay hoặc Lee cung cấp bảng quy cách.
 - [ ] Đổi đích task đang chạy (`questionLocationNew` → `Location_Stocks` + RCS `updateOrderPointInfo`).
 - [ ] API 6 (ASN confirm bằng PDA) – WCS gốc cũng chưa bật. API 9 (đóng lệnh SX) – WCS gốc gắn chung endpoint hủy định danh; hỏi TKSolution có tách riêng không.
 - [ ] Test chéo với các script giả lập của G8-WCS gốc (`scripts/simu_*`, đang viết cứng IP 192.168.x) và `g8-ops-monitor mock_ics`.

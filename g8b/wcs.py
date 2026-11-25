@@ -29,7 +29,7 @@ from .common import (MsgLog, ROOT, ci_get, clean, deep_merge, hourly, site_port,
                      save_config, setup_logging, today_start)
 from .outbox import Outbox, accept_code
 
-VERSION = "0.6.0"
+VERSION = "0.7.0"
 
 DEFAULTS: dict = {
     "server": {"host": "0.0.0.0", "port": 9000},
@@ -167,6 +167,27 @@ class WCS:
             if refresh or not self._token:
                 self._token = self._login()
             return self._token
+
+    def wms_location_free(self, t: dict) -> bool | None:
+        """Hỏi WMS ô đích có hàng không (Location_Stocks, gọi ngay). True = trống, False = có hàng, None = không hỏi được."""
+        w = self.cfg["wms"]
+        data = {"Task_ID": t["task_id"], "Location": t["loc_new"], "Pallet_ID": t.get("pallet_id", "")}
+        for refresh in (False, True):
+            try:
+                body = {"Auth": {"Token": self.token(refresh), "App_Name": w["app_name"]}, "Data": data}
+            except RuntimeError as e:
+                log.warning("Location_Stocks: %s", e)
+                return None
+            status, resp, err = http_post(w["url"] + w["paths"]["location_stocks"], body, 10, self.msg, "WMS")
+            msg = ci_get(resp or {}, "message", default={}) if isinstance(resp, dict) else {}
+            code = ci_get(msg or {}, "message_Code", default=None)
+            if code == 203 and not refresh:
+                continue
+            if status == 200 and code == 200:
+                st = ci_get(ci_get(resp, "data", default={}) or {}, "Status", default=None)
+                return None if st is None else not bool(st)
+            return None
+        return None
 
     def _wms_build(self, job):
         w = self.cfg["wms"]
@@ -325,6 +346,13 @@ class WCS:
                 d = self.loc_get(t["loc_new"])
                 if d and d.get("task") and d["task"] != t["task_id"]:
                     return  # ô đích đang được task khác dùng - chờ
+                if d and d.get("kind") == "RACK" and d["state"] == L.FULL and self.wms_location_free(t) is True:
+                    # sổ WCS ghi "có hàng" nhưng WMS (nguồn tồn kho) báo trống - vd. pallet được dời tay / kiểm kê
+                    self.locs.update_one({"code": d["code"], "state": L.FULL, "task": None},
+                                         {"$set": {"state": L.EMPTY, "pallet_id": None}})
+                    self.alert("INFO", f"Ô {d['code']}: WMS báo trống (Location_Stocks) - đồng bộ lại trạng thái ô",
+                               task=t["task_id"])
+                    return self._dispatch(t)
                 return self._set_move(t, FAILED, error=f"Ô đích {t['loc_new']} không sẵn sàng ({d and d['state']})",
                                       reason="LocationBusy")
         order_id = t.get("order_id") or f"{r['order_prefix']}{self.next_seq('rcs_order'):07d}"

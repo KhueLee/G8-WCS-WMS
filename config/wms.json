@@ -20,7 +20,9 @@
   },
   "stations": {
     "MCSX009": "BDD09",
-    "BCXB001": "BCXB01"
+    "BCXB001": "BCXB01",
+    "MCSX001": "BDD01",
+    "MCSX005": "BDD05"
   },
   "auto_putaway": true,
   "codes": {

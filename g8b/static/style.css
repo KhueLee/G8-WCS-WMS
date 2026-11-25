@@ -143,3 +143,7 @@ main > h2 .b { vertical-align:middle; font-weight:400; }
 #dlg .dbtn button { padding:7px 14px; font-size:13px; }
 .brand { background:#fff; border-radius:8px; padding:8px; margin:0 0 10px; }
 .brand .logo { margin:0 auto; }
+
+/* ---------- tiến độ định danh của lệnh sản xuất */
+.prog { height:8px; background:var(--track); border-radius:4px; overflow:hidden; min-width:140px; }
+.prog div { height:100%; background:var(--series-1); border-radius:4px; }

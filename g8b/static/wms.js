@@ -22,6 +22,119 @@ async function post(path, body, after) {
   return r;
 }
 const fdata = e => { e.preventDefault(); return Object.fromEntries(new FormData(e.target).entries()); };
+const fileB64 = f => new Promise(res => { const r = new FileReader(); r.onload = () => res(r.result); r.readAsDataURL(f); });
+const dlBtn = (href, label, kind = 'a') => `<a class="${kind}" href="${href}" style="text-decoration:none;display:inline-block;padding:6px 12px">${label}</a>`;
+
+// ---------------------------------------------------------------- lệnh sản xuất
+const PS = {status: 'WAITING,IDENTIFYING', q: '', timer: null, imp: null};
+const PSTATUS = () => CFG.prod_status || {WAITING: 'Chờ định danh', IDENTIFYING: 'Đang định danh', DONE: 'Hoàn thành', CANCELLED: 'Đã hủy'};
+const PBADGE = {WAITING: 'warn', IDENTIFYING: 'run', DONE: 'ok', CANCELLED: ''};
+const pbadge = s => `<span class="b ${PBADGE[s] || ''}">${esc(PSTATUS()[s] || s)}</span>`;
+function progressCell(r) {
+  const g = r.progress || {};
+  if (!g.ctn_plan) return r.status === 'WAITING' ? '<span class="hint">chưa định danh</span>' : '';
+  return `<div class="prog" title="${g.pct}%"><div style="width:${Math.min(100, g.pct)}%"></div></div>
+    <div class="hint" style="margin:2px 0 0">${fmt(g.ctn_done)}/${fmt(g.ctn_plan)} thùng · ${g.pallets_done}/${g.pallets} pallet · đã cất ${g.pallets_stored}${g.pallets_cancelled ? ` · hủy ${g.pallets_cancelled}` : ''}</div>`;
+}
+async function prodList() {
+  if (CUR !== 'w_prod') { clearInterval(PS.timer); PS.timer = null; return; }
+  const rows = await api(W('/api/prod?' + new URLSearchParams({status: PS.status, q: PS.q})));
+  const el = $('#prodlist'); if (!el) return;
+  $('#prodcount').textContent = `${rows.length} lệnh`;
+  el.innerHTML = table(rows, [['Lệnh SX', r => `<b style="white-space:nowrap">${esc(r.code)}</b>`], ['Ngày SX', 'prod_date'], ['Line', 'line'],
+    ['Sản phẩm', r => `${esc(r.item_code)}${r.product_missing ? ' <span class="b bad">chưa có SP</span>' : !r.product_ok ? ' <span class="b warn">thiếu quy cách</span>' : ''}<div class="hint" style="margin:0">${esc(r.item_name || '')}</div>`],
+    ['Số kiện', 'ctn', 'num'], ['Tổng SL', 'qty_total', 'num'], ['Kho nhập TP', 'wh_in'],
+    ['Trạng thái', r => pbadge(r.status) + (r.identify?.line_id ? `<div class="hint" style="margin:0">bàn ${esc(r.identify.line_id)}</div>` : '')],
+    ['Tiến độ định danh', progressCell], ['Ghi chú', 'note'],
+    ['', r => (r.status === 'WAITING' ? `<button type="button" class="p" onclick="prodStart('${esc(r.key)}')">Định danh</button> ` : '')
+      + (r.status === 'IDENTIFYING' ? `<button type="button" class="a d" onclick="prodCancel('${esc(r.key)}')">Hủy định danh</button> ` : '')
+      + `<button type="button" class="a" onclick="prodEditDlg('${esc(r.key)}')">Sửa</button>`
+      + (r.status !== 'IDENTIFYING' ? ` <button type="button" class="a d" onclick="prodDelete('${esc(r.key)}')">Xoá</button>` : '')]]);
+  PS.rows = rows;
+}
+function prodAfter() { prodList(); clearInterval(PS.timer); PS.timer = setInterval(() => { if (!$('#dlg.show')) prodList(); }, 3000); }
+
+async function prodStart(key) {
+  const o = PS.rows.find(r => r.key === key), p = PRODUCTS.find(x => x.item_code === o.item_code);
+  if (!p) return toast(`Sản phẩm ${o.item_code} chưa có trong danh mục (Danh mục → Sản phẩm)`, true);
+  if (!(p.inner_carton > 0 && p.inner_pallet > 0)) return toast(`Sản phẩm ${o.item_code} chưa có quy cách thùng / pallet – nhập ở Danh mục → Sản phẩm`, true);
+  const desks = Object.keys(CFG.stations || {}).filter(k => !k.startsWith('BCXB'));
+  if (!desks.length) return toast('Chưa khai bàn định danh (Hệ thống → Cấu hình WMS → Line → điểm sàn)', true);
+  const def = desks.includes(o.line_id) ? o.line_id : desks[0];
+  const pal = Math.ceil(o.ctn / p.inner_pallet);
+  const r = await dialog({title: `Định danh lệnh ${o.code}`, body: `<p><b>${esc(o.item_code)}</b> – ${esc(p.item_name)}<br>
+    Quy cách: ${p.inner_carton} chiếc/thùng · ${p.inner_pallet} thùng/pallet. Line trên lệnh: ${esc(o.line)}</p>
+    <div class="row"><label class="fl">Bàn định danh<select name="line_id">${desks.map(d => `<option ${d === def ? 'selected' : ''}>${esc(d)}</option>`).join('')}</select></label>
+    <label class="fl">Số thùng định danh<input name="ctn" type="number" min="1" value="${o.ctn}" style="width:120px"></label>
+    <label class="fl">NSX<input name="mfg_date" value="${esc(o.prod_date || today())}" style="width:120px"></label>
+    <label class="fl">Kho cất<select name="dest_wh">${whOpts(CFG.store_zone)}</select></label></div>
+    <p class="hint">${o.ctn} thùng ≈ ${pal} pallet. WMS sinh mã thùng, giữ chỗ ${pal} ô trống trong kho cất và gửi lệnh xuống bàn định danh.
+    Pallet nào đủ thùng: bàn định danh báo về, robot tự cất vào ô đã giữ.</p>`,
+    buttons: [{label: 'Thôi', value: null}, {label: 'Bắt đầu định danh', value: 'go', kind: 'p'}]});
+  if (r.value !== 'go') return;
+  await post(W('/api/prod/start'), {key, ...r.data, ctn: +r.data.ctn}, prodList);
+}
+async function prodCancel(key) {
+  const o = PS.rows.find(r => r.key === key);
+  if (await ask('Hủy định danh', `Hủy định danh lệnh <b>${esc(o.code)}</b>? Bàn định danh làm nốt pallet đang dở, các pallet chưa làm bị hủy và nhả ô đã giữ. Lệnh chuyển sang "Đã hủy".`, 'Hủy định danh', 'd'))
+    await post(W('/api/prod/cancel'), {key}, prodList);
+}
+async function prodDelete(key) {
+  const o = PS.rows.find(r => r.key === key);
+  if (await ask('Xoá lệnh sản xuất', `Xoá lệnh <b>${esc(o.code)}</b> (line ${esc(o.line)})?`, 'Xoá', 'd')) await post(W('/api/prod/delete'), {key}, prodList);
+}
+async function prodEditDlg(key) {
+  const o = key ? PS.rows.find(r => r.key === key) : {status: 'WAITING', prod_date: today(), type: 'Thành Phẩm', wh_in: 'KTM001RB', wh_out: 'KVT002'};
+  const busy = o.status === 'IDENTIFYING';
+  const f = (n, l, t = 'text', w = 130) => `<label class="fl">${l}<input name="${n}" type="${t}" value="${esc(o[n] ?? '')}" style="width:${w}px" ${busy && n !== 'note' ? 'disabled' : ''}></label>`;
+  const st = Object.entries(PSTATUS()).filter(([k]) => k !== 'IDENTIFYING');
+  const r = await dialog({title: key ? `Sửa lệnh ${o.code}` : 'Thêm lệnh sản xuất', body: `
+    ${busy ? '<p class="hint">Lệnh đang định danh: chỉ sửa được ghi chú.</p>' : ''}
+    <div class="row">${f('code', 'Lệnh sản xuất', 'text', 150)}${f('line', 'Line', 'text', 130)}${f('prod_date', 'Ngày SX (dd/mm/yyyy)', 'text', 120)}</div>
+    <div class="row"><label class="fl">Mã SP Group<input name="item_code" list="prodcodes" value="${esc(o.item_code || '')}" style="width:220px" ${busy ? 'disabled' : ''}></label>
+      <datalist id="prodcodes">${PRODUCTS.map(p => `<option value="${esc(p.item_code)}">${esc(p.item_name)}</option>`).join('')}</datalist>
+      ${f('ctn', 'Số kiện', 'number', 100)}${f('qty_total', 'Tổng SL', 'number', 110)}</div>
+    <div class="row">${f('wh_in', 'Kho nhập TP')}${f('wh_out', 'Kho xuất')}${f('type', 'Loại hình SX')}
+      ${busy ? '' : `<label class="fl">Trạng thái<select name="status">${st.map(([k, v]) => `<option value="${k}" ${k === o.status ? 'selected' : ''}>${esc(v)}</option>`).join('')}</select></label>`}</div>
+    <div class="row"><label class="fl" style="flex:1">Ghi chú<input name="note" value="${esc(o.note || '')}" style="width:100%"></label></div>`,
+    buttons: [{label: 'Thôi', value: null}, {label: 'Lưu', value: 'save', kind: 'p'}]});
+  if (r.value !== 'save') return;
+  const b = {...o, ...r.data, old_key: key || ''};
+  if (!b.qty_even && b.qty_total) b.qty_even = b.qty_total;
+  await post(W('/api/prod'), b, prodList);
+}
+async function prodImpRead() {
+  const f = $('#prodfile').files[0]; if (!f) return toast('Chọn file trước', true);
+  const r = await api(W('/api/prod/import/preview'), {name: f.name, b64: await fileB64(f)});
+  if (!r.ok) return toast(r, true);
+  PS.imp = r;
+  $('#prodimp').innerHTML = `<h3 style="margin-top:12px">2. Chọn trạng thái cần nạp (file ${esc(r.name)}: ${fmt(r.total)} dòng)</h3>` +
+    table(r.groups, [['Trạng thái trong file', g => `<b>${esc(g.status_text)}</b>`], ['Số dòng', 'count', 'num'], ['Mới', 'new', 'num'],
+      ['Đã có, đang chờ (cập nhật)', 'exists', 'num'], ['Đã có, đang định danh / xong (giữ nguyên)', 'busy', 'num'],
+      ['Nạp', g => `<input type="checkbox" data-st="${esc(g.status_text)}" ${g.waiting ? 'checked' : ''}>`]]) +
+    (r.missing_products.length ? `<p class="hint"><span class="st warn"><i>▲</i></span> Sản phẩm chưa có trong danh mục: ${esc(r.missing_products.join(', '))} – nạp file sản phẩm hoặc thêm tay trước khi định danh.</p>` : '') +
+    `<div class="row" style="margin-top:8px"><button type="button" class="p" onclick="prodImpApply()">3. Nạp vào – trạng thái Chờ định danh</button></div>`;
+}
+async function prodImpApply() {
+  const statuses = $$('#prodimp [data-st]').filter(x => x.checked).map(x => x.dataset.st);
+  if (!statuses.length) return toast('Chọn ít nhất 1 trạng thái', true);
+  const r = done(await api(W('/api/prod/import/apply'), {token: PS.imp.token, statuses}));
+  if (r.ok) { PS.imp = null; $('#prodimp').innerHTML = ''; $('#prodfile').value = ''; await loadWmsCfg(); prodList(); }
+}
+
+async function prodsImpRead() {
+  const f = $('#prodsfile').files[0]; if (!f) return toast('Chọn file trước', true);
+  const r = await api(W('/api/products/import/preview'), {name: f.name, b64: await fileB64(f)});
+  if (!r.ok) return toast(r, true);
+  $('#prodsimp').innerHTML = `<div class="tiles" style="margin-top:12px">${tile('Sản phẩm trong file', fmt(r.total), `${fmt(r.lines)} dòng mã – chuyền`)}
+    ${tile('Thêm mới', fmt(r.new), '')}${tile('Cập nhật', fmt(r.update), 'tên, chuyền')}${tile('Có quy cách thùng', fmt(r.with_spec), 'lấy từ tên "(..c/T)" hoặc cột quy cách')}</div>
+    <p class="hint">Sản phẩm đã có: cập nhật tên và chuyền; quy cách đang có được giữ (trừ khi file có cột quy cách). Sản phẩm mới chưa có quy cách pallet: nhập ở bảng dưới trước khi định danh.</p>
+    <button type="button" class="p" onclick="prodsImpApply('${r.token}')">2. Nạp vào danh mục</button>`;
+}
+async function prodsImpApply(token) {
+  const r = done(await api(W('/api/products/import/apply'), {token}));
+  if (r.ok) { await loadWmsCfg(); show(); }
+}
 
 // ---------------------------------------------------------------- định danh
 function idSpec() {
@@ -105,6 +218,7 @@ function prodForm() {
    <label class="fl">Mã SP<input name="item_code" value="${esc(p.item_code || '')}" required></label>
    <label class="fl">Tên SP<input name="item_name" value="${esc(p.item_name || '')}" required style="min-width:300px"></label>
    <label class="fl">Nhóm<input name="group" value="${esc(p.group || '')}"></label>
+   <label class="fl">Chuyền (cách nhau dấu phẩy)<input name="lines" value="${esc((p.lines || []).join(', '))}" style="min-width:220px"></label>
    <label class="fl">Quy cách thùng (chiếc/thùng)<input name="inner_carton" type="number" min="1" value="${esc(p.inner_carton)}" required></label>
    <label class="fl">Quy cách pallet (thùng/pallet)<input name="inner_pallet" type="number" min="1" value="${esc(p.inner_pallet)}" required></label>
    <label class="fl">GW kg/thùng<input name="gw" type="number" step="any" value="${esc(p.gw)}"></label>
@@ -118,7 +232,7 @@ async function prodSave(e) {
   f.active = !!e.target.active.checked; f.old_code = PEDIT?.item_code || '';
   await post(W('/api/products'), f, async () => { PEDIT = null; await loadWmsCfg(); show(); });
 }
-function prodEdit(code) { PEDIT = PRODUCTS.find(p => p.item_code === code); show(); }
+function prodEdit(code) { PEDIT = PRODUCTS.find(p => p.item_code === code); show().then(() => $('#main form.f')?.scrollIntoView({behavior: 'smooth'})); }
 async function prodDel(code) { if (await ask('Xoá sản phẩm', `Xoá sản phẩm <b>${esc(code)}</b>?`, 'Xoá', 'd')) await post(W('/api/products/delete'), {item_code: code}, async () => { await loadWmsCfg(); show(); }); }
 
 async function saveWmsCfg() {
@@ -155,6 +269,26 @@ page('w_dash', 'overview', 'Kho (WMS)', 'WMS', async () => {
   </div>
   <div class="card"><h3>Sự kiện gần đây</h3>${table(d.events, [['Giờ', 't'], ['Sự kiện', 'text']])}</div>`;
 });
+
+page('w_prod', 'order', 'Lệnh sản xuất', 'WMS', async () => {
+  await loadWmsCfg();
+  const st = PSTATUS();
+  return `<div class="noauto"><div class="card"><h3>Lệnh sản xuất</h3>
+   <div class="hint">Nạp file lệnh sản xuất xuất từ hệ thống G8 (CKHC_G8_San_Xuat_Export_*.xlsx): lệnh <b>Kế hoạch / Đang sản xuất</b> vào trạng thái <b>Chờ định danh</b>.
+   Khi chuyền bắt đầu đóng thùng, người vận hành bấm <b>Định danh</b> trên lệnh: WMS sinh mã thùng, chia pallet, giữ chỗ ô cất và gửi lệnh xuống bàn định danh.
+   Cột <b>Tiến độ</b> tự cập nhật theo pallet bàn định danh báo xong; đủ pallet thì lệnh chuyển <b>Hoàn thành</b>.</div>
+   <div class="row"><label class="fl">File lệnh sản xuất (.xlsx)<input type="file" id="prodfile" accept=".xlsx"></label>
+    <button type="button" class="a" onclick="prodImpRead()">1. Đọc file</button>
+    ${dlBtn(W('/api/prod/export?status=' + encodeURIComponent(PS.status)), 'Xuất file (theo bộ lọc)')}
+    ${dlBtn(W('/api/prod/export?status=WAITING'), 'Xuất lệnh chờ định danh')}
+    <button type="button" class="p" onclick="prodEditDlg('')">Thêm lệnh tay</button></div>
+   <div id="prodimp"></div></div>
+  <div class="card"><div class="row" style="margin-bottom:10px">
+   <label class="fl">Trạng thái<select onchange="PS.status=this.value;prodList()">${[['WAITING,IDENTIFYING', 'Chờ + đang định danh'], ...Object.entries(st), ['', 'Tất cả']]
+     .map(([v, n]) => `<option value="${v}" ${PS.status === v ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select></label>
+   <label class="fl">Tìm (mã lệnh / SP / line / ghi chú)<input value="${esc(PS.q)}" oninput="PS.q=this.value;prodList()"></label>
+   <span class="hint" id="prodcount"></span></div><div id="prodlist"></div></div></div>`;
+}, prodAfter);
 
 page('w_new_id', 'order', 'Định danh', 'WMS', async () => {
   await loadWmsCfg();
@@ -252,10 +386,32 @@ page('w_events', 'track', 'Sự kiện', 'WMS', async () => table(await api(W('/
 
 page('w_products', 'catalog', 'Sản phẩm', 'WMS', async () => {
   await loadWmsCfg();
-  return `<div class="card">${prodForm()}</div>` + table(PRODUCTS, [['Mã SP', 'item_code'], ['Tên', 'item_name'], ['Nhóm', 'group'],
-    ['Chiếc/thùng', 'inner_carton', 'num'], ['Thùng/pallet', 'inner_pallet', 'num'], ['GW kg/thùng', 'gw', 'num'], ['NW kg/thùng', 'nw', 'num'],
-    ['Dùng', r => r.active !== false ? '✓' : ''], ['', r => `<button class=a onclick="prodEdit('${esc(r.item_code)}')">Sửa</button> <button class="a d" onclick="prodDel('${esc(r.item_code)}')">Xoá</button>`]]);
-});
+  const miss = PRODUCTS.filter(p => !(p.inner_carton > 0 && p.inner_pallet > 0)).length;
+  return `<div class="noauto"><div class="card"><h3>Nhập / xuất file danh sách sản phẩm</h3>
+   <div class="hint">Định dạng file "CKHC_G8_BOM_Linh_Kien_Chuyen_San_Xuat_Export_*.xlsx": cột Mã BOM | Tên BOM | Chuyền (một mã nhiều chuyền = nhiều dòng).
+   File xuất ra giữ đúng 3 cột đó, thêm các cột quy cách phía sau (nạp lại được).</div>
+   <div class="row"><label class="fl">File sản phẩm (.xlsx)<input type="file" id="prodsfile" accept=".xlsx"></label>
+    <button type="button" class="a" onclick="prodsImpRead()">1. Đọc file</button> ${dlBtn(W('/api/products/export'), 'Xuất file danh sách sản phẩm')}</div>
+   <div id="prodsimp"></div></div>
+  <div class="card">${prodForm()}</div>
+  <div class="card"><div class="row" style="margin-bottom:10px">
+   <label class="fl">Tìm (mã / tên / chuyền)<input value="${esc(PRF.q)}" oninput="PRF.q=this.value;prodTable()"></label>
+   <label class="ck"><input type="checkbox" ${PRF.miss ? 'checked' : ''} onchange="PRF.miss=this.checked;prodTable()">Chỉ sản phẩm thiếu quy cách</label>
+   ${miss ? `<span class="hint"><span class="st warn"><i>▲</i>${miss} sản phẩm chưa đủ quy cách thùng / pallet</span> – bấm Sửa để nhập trước khi định danh.</span>` : ''}
+   <span class="hint" id="prodtcount"></span></div><div id="prodtable"></div></div></div>`;
+}, () => prodTable());
+const PRF = {q: '', miss: false};
+function prodTable() {
+  const q = PRF.q.trim().toLowerCase();
+  const rows = PRODUCTS.filter(p => (!PRF.miss || !(p.inner_carton > 0 && p.inner_pallet > 0)) &&
+    (!q || [p.item_code, p.item_name, ...(p.lines || [])].some(x => String(x || '').toLowerCase().includes(q))));
+  $('#prodtcount').textContent = `${rows.length}/${PRODUCTS.length} sản phẩm`;
+  $('#prodtable').innerHTML = table(rows.slice(0, 300), [['Mã SP', 'item_code'], ['Tên', 'item_name'], ['Chuyền', r => esc((r.lines || []).join(', '))], ['Nhóm', 'group'],
+    ['Chiếc/thùng', r => r.inner_carton > 0 ? r.inner_carton : '<span class="b warn">thiếu</span>', 'num'], ['Thùng/pallet', r => r.inner_pallet > 0 ? r.inner_pallet : '<span class="b warn">thiếu</span>', 'num'],
+    ['GW kg/thùng', 'gw', 'num'], ['NW kg/thùng', 'nw', 'num'],
+    ['Dùng', r => r.active !== false ? '✓' : ''], ['', r => `<button class=a onclick="prodEdit('${esc(r.item_code)}')">Sửa</button> <button class="a d" onclick="prodDel('${esc(r.item_code)}')">Xoá</button>`]])
+    + (rows.length > 300 ? `<p class="hint">Hiện 300 dòng đầu – gõ ô tìm để lọc.</p>` : '');
+}
 page('w_wh', 'catalog', 'Kho', 'WMS', warehousePage);
 page('w_loclist', 'catalog', 'Danh sách vị trí (highbay)', 'WMS', locationPage, locAfter);
 

@@ -18,6 +18,7 @@ from pymongo import MongoClient
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from g8b import locations as L  # noqa: E402
+from g8b import prodfiles as F  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PY = sys.executable
@@ -68,7 +69,7 @@ def start(name: str):
         "rcs": [PY, "-m", "g8b.sim", "rcs", "--port", str(P["rcs"]), "--step-s", "0.3", "--robots", "2",
                 "--callback", U["wcs"] + "/rcs/taskStatusReport",
                 "--callback", U["wms"] + "/not-a-wcs-callback",          # URL thứ 2 (luồng A giả) - RCS gửi mọi URL
-                "--points", LOCFILE, "--extra-points", "BDD09,BCXB01"],
+                "--points", LOCFILE, "--extra-points", "BDD01,BDD05,BDD09,BCXB01"],
         "ids": [PY, "-m", "g8b.sim", "ids", "--port", str(P["ids"]), "--line", "MCSX009", "--per-carton-s", "0.1",
                 "--retry-s", "1", "--done-url", U["wcs"] + "/identify-service/ids/pallet_identify_done"],
         "scs": [PY, "-m", "g8b.sim", "scs", "--port", str(P["scs"]), "--line", "BCXB001", "--per-carton-s", "0.05",
@@ -588,6 +589,125 @@ def s22_tkelog_dot_location_and_latent_robot():
     assert got == {"S": 2, "S02": 2, "C": 1, "A": 1}, got
 
 
+def upload(path, name, data: bytes):
+    import base64
+    return post("wms", path, {"name": name, "b64": base64.b64encode(data).decode()})
+
+
+def xlsx_bytes(rows_by_sheet_row) -> bytes:
+    """Tạo file Excel từ danh sách dòng (giống file xuất từ hệ thống G8)."""
+    import io
+    from datetime import datetime as _dt
+    from openpyxl import Workbook
+    wb = Workbook()
+    ws = wb.active
+    for r in rows_by_sheet_row:
+        ws.append([_dt.strptime(v, "%d/%m/%Y") if isinstance(v, str) and v.count("/") == 2 and v[:2].isdigit() else v
+                   for v in r])
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+@scenario
+def s23_production_orders_and_products_files():
+    # 1. file sản phẩm đúng 3 cột như file G8 (một mã nhiều chuyền = nhiều dòng)
+    pf = xlsx_bytes([F.PROD_COLS, ["TEST_P1", "Bóng test P1 (6c/T)", "MCSX009(5W)"], ["TEST_P1", "Bóng test P1 (6c/T)", "MCSX010"],
+                     ["TEST_P2", "Bóng test P2", "MCSX009"]])
+    pv = upload("/api/products/import/preview", "CKHC_G8_BOM_test.xlsx", pf)
+    assert pv["ok"] and pv["total"] == 2 and pv["new"] == 2 and pv["lines"] == 3, pv
+    assert post("wms", "/api/products/import/apply", {"token": pv["token"]})["ok"]
+    prods = {x["item_code"]: x for x in get("wms", "/api/products")}
+    assert prods["TEST_P1"]["inner_carton"] == 6 and prods["TEST_P1"]["lines"] == ["MCSX009(5W)", "MCSX010"], prods["TEST_P1"]
+    assert prods["TEST_P2"]["inner_carton"] == 0 and prods["TEST_P2"]["inner_pallet"] == 0
+    x = http.get(U["wms"] + "/api/products/export")
+    assert x.status_code == 200 and x.content[:2] == b"PK"
+    back = {r["item_code"]: r for r in F.read_products(x.content)}
+    assert back["TEST_P1"]["lines"] == ["MCSX009(5W)", "MCSX010"] and back["TEST_P1"]["inner_carton"] == 6, back["TEST_P1"]
+    from openpyxl import load_workbook
+    import io
+    assert [c.value for c in load_workbook(io.BytesIO(x.content)).active[1]][:3] == F.PROD_COLS
+
+    # 2. file lệnh sản xuất: dòng 1 nhóm cột, dòng 2 tiêu đề, dòng 3+ dữ liệu (như CKHC_G8_San_Xuat_Export)
+    g1 = [None] * 17
+    g1[7], g1[11] = "Thành phẩm", "Nguyên phụ liệu"
+    def row(code, line, st, item, ctn, qty, note=""):
+        return [code, "KTM001RB", "KVT002", "25/11/2026", line, st, "Thành Phẩm", ctn, qty, 0, qty, 0, 0, 100, 100, item, note]
+    of = xlsx_bytes([g1, [t for _, t in F.ORDER_COLS],
+                     row("VAS-T-1", "MCSX009(5W)", "Kế hoạch", "TEST_P1", 5, 30, "lệnh test 1"),
+                     row("VAS-T-2", "MCSX009(5W)", "Đang sản xuất", "TEST_P2", 4, 48),
+                     row("VAS-T-3", "MCSX009(5W)", "Kết thúc", "TEST_P1", 9, 54)])
+    pv = upload("/api/prod/import/preview", "CKHC_G8_San_Xuat_test.xlsx", of)
+    assert pv["ok"] and pv["total"] == 3, pv
+    g = {x["status_text"]: x for x in pv["groups"]}
+    assert g["Kế hoạch"]["waiting"] and g["Đang sản xuất"]["waiting"] and not g["Kết thúc"]["waiting"], g
+    r = post("wms", "/api/prod/import/apply", {"token": pv["token"], "statuses": ["Kế hoạch", "Đang sản xuất"]})
+    assert r["ok"], r
+    rows = {o["code"]: o for o in get("wms", "/api/prod?q=VAS-T-")}
+    assert set(rows) == {"VAS-T-1", "VAS-T-2"} and all(o["status"] == "WAITING" for o in rows.values()), rows
+    assert rows["VAS-T-1"]["line_id"] == "MCSX009" and rows["VAS-T-1"]["prod_date"] == "25/11/2026"
+    # quy cách thùng học từ lệnh: Tổng SL / Số kiện = 48 / 4
+    assert next(p for p in get("wms", "/api/products") if p["item_code"] == "TEST_P2")["inner_carton"] == 12
+
+    # 3. thiếu quy cách pallet -> chưa định danh được; nhập quy cách rồi bấm Định danh
+    k1 = rows["VAS-T-1"]["key"]
+    r = post("wms", "/api/prod/start", {"key": k1, "dest_wh": "C"})
+    assert not r["ok"] and "quy cách" in r["msg"], r
+    assert post("wms", "/api/products", {"item_code": "TEST_P1", "item_name": "Bóng test P1 (6c/T)", "inner_carton": 6,
+                                         "inner_pallet": 2, "gw": 1.2, "lines": "MCSX009(5W), MCSX010"})["ok"]
+    r = post("wms", "/api/prod/start", {"key": k1, "dest_wh": "C"})
+    assert r["ok"] and r["pallets"] == 3 and r["po_name"] == "VAS-T-1", r
+    assert post("wms", "/api/prod/delete", {"key": k1})["ok"] is False, "lệnh đang định danh không được xoá"
+    seen = []
+
+    def prog():
+        o = next(o for o in get("wms", "/api/prod?q=VAS-T-1") if o["key"] == k1)
+        seen.append((o["status"], o["progress"].get("pallets_done"), o["progress"].get("ctn_done")))
+        return o["status"] == "DONE"
+    until(prog, timeout=60, every=0.2, what="lệnh sản xuất định danh xong")
+    assert seen[-1] == ("DONE", 3, 5), seen[-1]
+    assert [x[1] for x in seen] == sorted(x[1] for x in seen), f"tiến độ phải tăng dần: {seen}"
+    o = next(o for o in get("wms", "/api/prod?q=VAS-T-1") if o["key"] == k1)
+    assert o["progress"]["ctn_plan"] == 5 and o["progress"]["pct"] == 100, o["progress"]
+    until(lambda: next(o for o in get("wms", "/api/prod?q=VAS-T-1"))["progress"]["pallets_stored"] == 3,
+          timeout=60, what="3 pallet được robot cất vào kho C")
+
+    # 3b. dời tay pallet (WCS không biết) rồi gọi robot đưa pallet khác vào ô vừa trống:
+    #     sổ WCS còn ghi "có hàng" -> WCS hỏi WMS Location_Stocks, WMS báo trống -> WCS đồng bộ và cho robot chạy
+    ps = [p for p in get("wms", "/api/pallets?status=STORED") if p["order_id"] == r["order_id"]]
+    free = [c["code"] for c in get("wms", "/api/locations?wh=C") if c["kind"] == "RACK" and c["state"] == "EMPTY" and not c.get("task")]
+    x_cell = ps[0]["location"]
+    assert post("wms", "/api/update_location", {"pallet_id": ps[0]["pallet_id"], "to": free[0], "note": "dời tay"})["ok"]
+    assert loc("wcs", x_cell)["state"] == "FULL" and loc("wms", x_cell)["state"] == "EMPTY"
+    mv = post("wms", "/api/move", {"pallet_id": ps[1]["pallet_id"], "to": x_cell, "type_move": 11})
+    assert mv["ok"], mv
+    until(lambda: next(o for o in get("wms", "/api/orders") if o["order_id"] == mv["order_id"])["status"] == "COMPLETED",
+          timeout=40, what="robot đưa pallet vào ô WCS ghi đầy nhưng WMS báo trống")
+    assert any(x_cell in a["text"] and "Location_Stocks" in a["text"] for a in get("wcs", "/api/alerts")), "phải có cảnh báo đồng bộ ô"
+
+    # 4. sửa tay, xuất file lệnh chờ, xoá
+    k2 = rows["VAS-T-2"]["key"]
+    r = post("wms", "/api/prod", dict(rows["VAS-T-2"], ctn=6, note="sửa tay", old_key=k2))
+    assert r["ok"], r
+    x = http.get(U["wms"] + "/api/prod/export?status=WAITING")
+    exp = [o for o in F.read_orders(x.content) if o["code"].startswith("VAS-T-")]
+    assert [(o["code"], o["status_text"], o["ctn"], o["note"]) for o in exp] == [("VAS-T-2", "Kế hoạch", 6, "sửa tay")], exp
+    wb = load_workbook(io.BytesIO(x.content)).active
+    assert wb["H1"].value == "Thành phẩm" and wb["L1"].value == "Nguyên phụ liệu" and wb["A2"].value == "Lệnh sản xuất"
+    assert post("wms", "/api/prod/delete", {"key": k2})["ok"]
+
+    # 5. thêm lệnh tay -> định danh -> hủy định danh
+    r = post("wms", "/api/prod", {"code": "VAS-T-4", "line": "MCSX009", "prod_date": "26/11/2026", "item_code": "TEST_P1",
+                                  "ctn": 6, "qty_total": 36})
+    assert r["ok"], r
+    k4 = r["key"]
+    assert post("wms", "/api/prod/start", {"key": k4, "dest_wh": "C"})["ok"]
+    r = post("wms", "/api/prod/cancel", {"key": k4})
+    assert r["ok"], r
+    o = next(o for o in get("wms", "/api/prod?status=CANCELLED") if o["key"] == k4)
+    assert o["status"] == "CANCELLED"
+
+
 def main():
     sys.stdout.reconfigure(encoding="utf-8")
     for db in (DB_WCS, DB_WMS):
@@ -602,7 +722,8 @@ def main():
                    s11_foreign_rcs_callback_ignored, s12_restart_wcs_mid_task_polling_only,
                    s13_restart_wms_outbox_survives, s14_dest_busy_waits, s15_manual_move_and_raw_order,
                    s16_config_on_web, s17_dashboards, s18_highbay_locations, s19_import_raw_and_cascade,
-                   s20_wms_catalog_and_manual, s21_web_site):
+                   s20_wms_catalog_and_manual, s21_web_site,
+                   s23_production_orders_and_products_files):
             fn()
     finally:
         for n in list(procs):

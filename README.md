@@ -1,4 +1,4 @@
-# G8 luồng B – WMS ảo + WCS B (v0.6.0)
+# G8 luồng B – WMS ảo + WCS B (v0.7.0)
 
 Hệ tích hợp tự chủ cho G8: **WMS ảo** nói API TKELog V5, **WCS B** nói đúng device API của G8-ID / G8-Export và API RCS HuaRay. Chuyển một trạm từ luồng A (TKELog + WCS gốc) sang luồng B chỉ cần đổi URL, không sửa phần mềm trạm.
 
@@ -75,16 +75,17 @@ Các bước:
   - **Cấu hình** (WMS, RCS, line định danh / băng tải, zone lưu trữ, taskPath theo mã hoặc Node).
 - WMS ảo:
   - Dashboard;
-  - **Đặt lệnh**: Định danh (sinh mã thùng theo quy cách sản phẩm), Luân chuyển pallet, Xuất hàng, Cập nhật vị trí (tay);
+  - **Đặt lệnh**: **Lệnh sản xuất** (nhập / xuất file G8, sửa tay, nút Định danh, tiến độ định danh), Định danh (sinh mã thùng theo quy cách sản phẩm), Luân chuyển pallet, Xuất hàng, Cập nhật vị trí (tay);
   - Theo dõi: Lệnh, Pallet / tồn kho (tạo / sửa / xoá pallet tay), Vị trí (khoá / làm trống ô), Sự kiện;
-  - **Danh mục**: Sản phẩm (quy cách thùng / pallet), Kho (ghép điểm theo tiền tố), Danh sách vị trí (nạp file highbay hoặc RAW, chọn kho / số điểm, xem khác biệt);
+  - **Danh mục**: Sản phẩm (nhập / xuất file G8, chuyền, quy cách thùng / pallet), Kho (ghép điểm theo tiền tố), Danh sách vị trí (nạp file highbay hoặc RAW, chọn kho / số điểm, xem khác biệt);
   - **Cấu hình** (WCS, tài khoản API, line → điểm sàn, zone lưu trữ, tự cất kệ).
 - Lưu cấu hình trên web sẽ ghi `config/*.json` (giữ bản `.bak`) và áp dụng ngay. Riêng cổng và MongoDB thì phải sửa file rồi chạy lại.
 
 **Chạy thử trên một máy không cần thiết bị:** `run.bat demo` (hoặc nhấp đúp `tools\run_demo.bat`) bật thêm RCS / bàn định danh / băng tải giả.
+**Chạy thử với 2 bàn định danh G8-ID thật (mô phỏng):** clone `https://github.com/KhueLee/G8-ID.git` cạnh thư mục này, chạy `run.bat demo` rồi `tools\run_g8id_demo.bat` (bàn MCSX001 :8600 và MCSX005 :8601, tự khai vào cấu hình; để cửa sổ chạy). Trên site: Đặt lệnh → Lệnh sản xuất → Định danh, xem tiến độ.
 
 **Test:**
-- `tools\run_tests.bat` chạy 22 kịch bản đầu cuối trên cổng và DB riêng, không đụng dữ liệu đang chạy.
+- `tools\run_tests.bat` chạy 23 kịch bản đầu cuối trên cổng và DB riêng, không đụng dữ liệu đang chạy.
 - Test với phần mềm trạm thật ở chế độ mô phỏng:
   ```
   .venv\Scripts\python tests\g8_modules_test.py --export C:\G8-Export --id C:\G8-ID\G8-ID-Deploy
@@ -101,12 +102,13 @@ g8b/
   wcs.py        WCS B
   wms.py        WMS ảo
   web.py        site giao diện chung :5510 (chuyển tiếp /wms, /wcs)
+  prodfiles.py  đọc / ghi file Excel sản phẩm và lệnh sản xuất định dạng G8
   ctl.py        kiểm tra môi trường / trạng thái / dừng (dùng trong install.bat, run.bat, update.bat)
   sim.py        simulator RCS / bàn định danh / băng tải xuất
   static/       giao diện web
 config/         wcs.json, wms.json, web.json, warehouses.json (kho), locations.xlsx (vị trí form highbay)
-tests/          e2e_test.py (22 kịch bản), g8_modules_test.py (G8-Export, G8-ID thật)
+tests/          e2e_test.py (23 kịch bản), g8_modules_test.py (G8-Export, 1 bàn và 2 bàn G8-ID thật)
 docs/           SPEC.md, TEST_REPORT.md, HUONG_DAN_SU_DUNG.pdf (+ guide_img/, tạo bằng tools/build_guide.py)
-tools/          run_demo.bat, run_tests.bat, build_guide.py
+tools/          run_demo.bat, run_tests.bat, run_g8id_demo.bat + g8id_desks.py (2 bàn G8-ID mô phỏng), build_guide.py + guide_diagrams.py
 logs/           log từng app, xoay theo ngày, giữ 30 ngày
 ```

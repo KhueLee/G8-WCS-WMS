@@ -4,6 +4,8 @@
   G8-ID:     app thật ở MANUAL + công cụ mô phỏng của G8-ID (công nhân ảo tự đặt thùng, tự bấm ĐỊNH DANH).
              Ở MANUAL G8-ID gửi pallet_identify_done về công cụ mô phỏng (thiết kế của G8-ID), nên test
              chuyển tiếp các bản tin đó sang WCS B, đúng body trạm gửi.
+  2 bàn:     2 bản G8-ID thật chạy song song (tools/g8id_desks.py), lệnh sản xuất nạp bằng file định dạng G8,
+             người vận hành bấm Định danh cả 2 lệnh, theo dõi tiến độ tới Hoàn thành, robot cất pallet.
 
 Chạy: .venv\\Scripts\\python tests\\g8_modules_test.py --export <thư mục G8-Export> --id <thư mục G8-ID-Deploy>
 """
@@ -21,13 +23,16 @@ import httpx
 from pymongo import MongoClient
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "tools"))
 import e2e_test as E  # noqa: E402
+import g8id_desks as G  # noqa: E402
 
 http = httpx.Client(timeout=15, trust_env=False)
 EXP_UI = "http://127.0.0.1:8080"
 EXP_SCS_PORT = 18700
 ID_ORDER, ID_UI, ID_SIM = "http://127.0.0.1:8500", "http://127.0.0.1:8600", "http://127.0.0.1:8700"
 extra: list[subprocess.Popen] = []
+extra_desks: list = []
 
 
 def add_lines():
@@ -169,6 +174,60 @@ def m02_g8_id_real_app_manual():
     assert len([m for m in ids_conf if m["status"] == 200]) >= 2, "G8-ID phải nhận confirm_product"
 
 
+# ---------------------------------------------------------------------- 2 bàn định danh G8-ID + lệnh sản xuất
+@E.scenario
+def m03_two_g8id_desks_production_orders():
+    # bàn 2, 3 (cổng 8501/8601/8701, 8502/8602/8702) - bàn 1 dùng cho m02
+    desks = [G.Desk(2, "MCSX001", ARGS.id, os.path.join(E.TMP, "g8id_desks"), E.MONGO, E.PY, E.LOGDIR, "e2e_g8id"),
+             G.Desk(3, "MCSX005", ARGS.id, os.path.join(E.TMP, "g8id_desks"), E.MONGO, E.PY, E.LOGDIR, "e2e_g8id")]
+    extra_desks.extend(desks)
+    for d in desks:
+        d.prepare()
+        d.start()
+    done = G.register(E.U["wcs"], E.U["wms"], [(d.line_id, d.order_url, pt) for d, pt in zip(desks, ("BDD01", "BDD05"))])
+    assert len(done) == 4, done
+    assert E.post("wms", "/api/products", {"item_code": "TEST_D1", "item_name": "SP bàn 1 (6c/T)", "inner_carton": 6,
+                                           "inner_pallet": 3, "gw": 1.637, "lines": "MCSX001(20W)"})["ok"]
+    assert E.post("wms", "/api/products", {"item_code": "TEST_D2", "item_name": "SP bàn 2 (12c/T)", "inner_carton": 12,
+                                           "inner_pallet": 2, "gw": 2.1, "lines": "MCSX005(40W)"})["ok"]
+    g1 = [None] * 17
+    g1[7], g1[11] = "Thành phẩm", "Nguyên phụ liệu"
+    rows = [g1, [t for _, t in E.F.ORDER_COLS],
+            ["VAS-D-1", "KTM001RB", "KVT002", "26/11/2026", "MCSX001(20W)", "Kế hoạch", "Thành Phẩm", 6, 36, 0, 36, 0, 0, 0, 0, "TEST_D1", "bàn 1"],
+            ["VAS-D-2", "KTM001RB", "KVT002", "26/11/2026", "MCSX005(40W)", "Đang sản xuất", "Thành Phẩm", 4, 48, 0, 48, 0, 0, 0, 0, "TEST_D2", "bàn 2"]]
+    pv = E.upload("/api/prod/import/preview", "CKHC_G8_San_Xuat_2ban.xlsx", E.xlsx_bytes(rows))
+    assert pv["ok"], pv
+    assert E.post("wms", "/api/prod/import/apply", {"token": pv["token"], "statuses": ["Kế hoạch", "Đang sản xuất"]})["ok"]
+    orders = {o["code"]: o for o in E.get("wms", "/api/prod?q=VAS-D-")}
+    for code in ("VAS-D-1", "VAS-D-2"):   # người vận hành bấm Định danh trên từng lệnh (bàn theo Line của lệnh)
+        r = E.post("wms", "/api/prod/start", {"key": orders[code]["key"]})
+        assert r["ok"] and r["pallets"] == 2, r
+    both = [o["status"] for o in E.get("wms", "/api/prod?q=VAS-D-")]
+    assert both == ["IDENTIFYING", "IDENTIFYING"], both
+    seen: dict[str, list] = {"VAS-D-1": [], "VAS-D-2": []}
+
+    def step():
+        for d in desks:
+            d.pump(E.U["wcs"])
+        cur = {o["code"]: o for o in E.get("wms", "/api/prod?q=VAS-D-")}
+        for code, o in cur.items():
+            seen[code].append((o["status"], o["progress"].get("pallets_done", 0), o["progress"].get("ctn_done", 0)))
+        return all(o["status"] == "DONE" for o in cur.values())
+    E.until(step, timeout=300, every=1, what="2 bàn G8-ID định danh xong 2 lệnh sản xuất")
+    for code, ctn in (("VAS-D-1", 6), ("VAS-D-2", 4)):
+        s_ = seen[code]
+        assert s_[-1] == ("DONE", 2, ctn), (code, s_[-1])
+        assert any(x[0] == "IDENTIFYING" and x[1] == 1 for x in s_), f"{code}: phải thấy tiến độ 1/2 pallet giữa chừng"
+        assert [x[2] for x in s_] == sorted(x[2] for x in s_), f"{code}: tiến độ phải tăng dần"
+    # mỗi bàn chỉ nhận lệnh của mình
+    out = [m for m in E.get("wcs", "/api/messages?q=orderTask&limit=100") if m["dir"] == "OUT"]
+    for d in desks:
+        mine = [m for m in out if str(d.order_port) in m.get("peer", "") + m.get("path", "")]
+        assert mine, f"bàn {d.line_id} phải nhận orderTask"
+    E.until(lambda: all(o["progress"]["pallets_stored"] == 2 for o in E.get("wms", "/api/prod?q=VAS-D-")),
+            timeout=90, every=1, what="robot cất 4 pallet của 2 bàn vào kho")
+
+
 def main():
     global ARGS
     sys.stdout.reconfigure(encoding="utf-8")
@@ -187,9 +246,12 @@ def main():
             m01_g8_export_real_app()
         if ARGS.id:
             m02_g8_id_real_app_manual()
+            m03_two_g8id_desks_production_orders()
     finally:
         for p in extra:
             p.kill()
+        for d in extra_desks:
+            d.stop()
         for n in list(E.procs):
             E.stop(n)
     ok = sum(1 for r in E.results if r[1])
