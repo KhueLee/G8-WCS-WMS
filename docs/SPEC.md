@@ -13,7 +13,7 @@ Tài liệu mô tả đúng hành vi của mã nguồn trong repo này (`g8b/`).
 - **Mã vị trí** dạng `Rack-Cột-Tầng` với dấu `-` (vd. `S02-257-1`) ở mọi nơi trong luồng B (WMS ảo, WCS B, tên điểm RCS).
   - TKELog (WMS gốc, luồng A) dùng dấu `.` (vd. `S02.257.1`). Hai hệ chạy song song; bản tin dạng TKELog đẩy xuống WCS B / WMS ảo được **tự đổi `.` sang `-`** ở mọi trường vị trí (`Location_Old`, `Location_New`, `Location`…), lưu và gửi RCS bằng dấu `-` (test s22).
   - Tên điểm trên RCS trùng mã vị trí, nên WCS B gửi thẳng mã vào `taskPath`, không qua bảng mapping.
-- **Công nghệ:** Python 3.11+, FastAPI, MongoDB 4.4+.
+- **Công nghệ:** Python 3.10+, FastAPI, MongoDB 4.4+.
   - Chạy bằng file `.bat` gọi Python, không đóng gói exe.
   - Nghe ở `0.0.0.0`, không viết cứng IP. Mọi địa chỉ nằm trong `config/*.json`.
 

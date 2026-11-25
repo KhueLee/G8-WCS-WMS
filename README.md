@@ -10,7 +10,7 @@ Hệ tích hợp tự chủ cho G8: **WMS ảo** nói API TKELog V5, **WCS B** n
 
 Cần 2 phần mềm, cài một lần:
 - **Git**: https://git-scm.com/download/win (để mặc định khi cài).
-- **Python 3.11+ 64-bit**: https://www.python.org/downloads/windows/ – khi cài **tick "Add python.exe to PATH"**.
+- **Python 3.10+ 64-bit**: https://www.python.org/downloads/windows/ – khi cài **tick "Add python.exe to PATH"**.
 
 Kéo code (khoảng 25 MB, đã kèm sẵn MongoDB trong `mongodb\bin`). Mở **Command Prompt** và gõ:
 
@@ -48,12 +48,12 @@ Chỉ có **3 file** ở thư mục gốc:
 
 | File | Việc |
 |---|---|
-| `install.bat` | Cài đặt và **kiểm tra môi trường**: Python 3.11+ 64-bit, `.venv` + thư viện, mongod, file cấu hình, cổng (trống / bị chiếm), tường lửa, kết nối RCS, Git, RAM, ổ đĩa. Chạy bằng *Run as administrator* thì tự mở cổng tường lửa cho WMS / WCS / site. Chạy lại bao nhiêu lần cũng được. |
+| `install.bat` | Cài đặt và **kiểm tra môi trường**: Python 3.10+ 64-bit, `.venv` + thư viện, mongod, file cấu hình, cổng (trống / bị chiếm), tường lửa, kết nối RCS, Git, RAM, ổ đĩa. Chạy bằng *Run as administrator* thì tự mở cổng tường lửa cho WMS / WCS / site. Chạy lại bao nhiêu lần cũng được. |
 | `run.bat` | **Chạy hệ thống**: MongoDB riêng (cổng 27018, cache tối đa 1 GB) → WMS ảo → WCS B → site, rồi mở giao diện. Mỗi thành phần một cửa sổ thu nhỏ "G8B ...", tự chạy lại nếu bị dừng. Thành phần nào đang chạy thì bỏ qua. `run.bat stop` dừng toàn bộ (MongoDB tắt êm), `run.bat status` xem trạng thái, `run.bat demo` chạy thêm robot / bàn định danh / băng tải giả. |
 | `update.bat` | **Cập nhật** lên bản mới trên GitHub (máy cài bằng `git clone`, cần Git): hiện danh sách thay đổi, hỏi xác nhận, sao lưu `config\` vào `backup\config_<thời gian>`, dừng hệ thống, lấy code mới **giữ nguyên cấu hình của máy**, chạy `install.bat`, rồi chạy lại hệ thống nếu trước đó đang chạy. Dữ liệu MongoDB (`data\db`) không bị đụng tới; code sửa tay trên máy bị ghi đè (trừ `config\`). |
 
 Các bước:
-1. Cài Python 3.11+ 64-bit, tick *Add python.exe to PATH*.
+1. Cài Python 3.10+ 64-bit, tick *Add python.exe to PATH*.
 2. Chuột phải `install.bat` → *Run as administrator*. Sửa hết các mục `[LỖI]` nếu có.
 3. Sửa cấu hình (trên web, mục Hệ thống → Cấu hình, hoặc trong `config\wcs.json` / `config\wms.json`):
    - địa chỉ RCS, trạm, WMS;

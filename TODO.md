@@ -57,6 +57,7 @@ Trạng thái: **v0.6.0 (25/11/2026)**; Lee duyệt viết spec + code + test t�
 ## v0.6 (25/11)
 - [x] Site giao diện cổng **5510**; MongoDB cache tối đa 1 GB.
 - [x] Giao diện luôn nền sáng; ô kệ viền xanh lá = trống, viền cam = có pallet (ghi mã pallet), tab "Vị trí"; nút hướng dẫn PDF ở cuối cột trái; file giao diện gửi `Cache-Control: no-cache`.
+- [x] Chạy được trên **Python 3.10+** (máy đích dùng 3.10): `fastapi 0.162.5`, `pymongo 4.18.3`; test 24/24 trên 3.10 và 3.13.
 - [x] Gom còn 3 file bat: `install.bat`, `run.bat`, `update.bat` (+ `g8b/ctl.py`).
 - [x] Lee chốt 25/11: TKELog dùng mã vị trí dấu `.`, luồng B dùng `-`, bản tin từ TKELog tự đổi sang `-` (test s22). Kho S chỉ dùng robot đội gầm (latent) = 2.
 

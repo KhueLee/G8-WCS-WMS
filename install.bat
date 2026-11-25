@@ -5,8 +5,8 @@ title G8B CAI DAT VA KIEM TRA MOI TRUONG
 rem Cai dat lan dau va kiem tra moi truong (chay lai bao nhieu lan cung duoc).
 rem Chay bang "Run as administrator" de tu mo cong firewall cho WMS / WCS / site.
 echo === 1. Python
-where python >nul 2>nul || (echo   [LOI] Chua cai Python 3.11+ 64-bit, khi cai tick "Add python.exe to PATH" & goto fail)
-python -c "import sys,struct; sys.exit(0 if sys.version_info>=(3,11) and struct.calcsize('P')==8 else 1)" || (echo   [LOI] Can Python 3.11 tro len ban 64-bit, may dang co: & python --version & goto fail)
+where python >nul 2>nul || (echo   [LOI] Chua cai Python 3.10+ 64-bit, khi cai tick "Add python.exe to PATH" & goto fail)
+python -c "import sys,struct; sys.exit(0 if sys.version_info>=(3,10) and struct.calcsize('P')==8 else 1)" || (echo   [LOI] Can Python 3.10 tro len ban 64-bit, may dang co: & python --version & goto fail)
 for /f "delims=" %%v in ('python --version') do echo   [OK] %%v
 
 echo === 2. Moi truong .venv va thu vien

@@ -200,10 +200,10 @@ def check() -> int:
     r = Report()
     print("Python / thư viện")
     v = sys.version_info
-    if v >= (3, 11) and struct.calcsize("P") == 8:
+    if v >= (3, 10) and struct.calcsize("P") == 8:
         r.ok(f"Python {v.major}.{v.minor}.{v.micro} 64-bit")
     else:
-        r.e(f"Python {v.major}.{v.minor} {struct.calcsize('P') * 8}-bit: cần 3.11+ 64-bit")
+        r.e(f"Python {v.major}.{v.minor} {struct.calcsize('P') * 8}-bit: cần 3.10+ 64-bit")
     from importlib import metadata
     with open(os.path.join(ROOT, "requirements.txt"), encoding="utf-8") as f:
         reqs = [l.strip() for l in f if l.strip() and not l.startswith("#")]

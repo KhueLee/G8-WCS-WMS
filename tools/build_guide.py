@@ -70,12 +70,12 @@ def body() -> str:
 <h1>2. Khởi động</h1>
 <table>
 <tr><th>File</th><th>Việc</th></tr>
-<tr><td>install.bat</td><td>Cài đặt và kiểm tra môi trường (Python 3.11+, thư viện, cổng, tường lửa, kết nối RCS, RAM, ổ đĩa). Chuột phải → <i>Run as administrator</i> để tự mở cổng tường lửa. Sửa hết các mục [LỖI] trước khi chạy.</td></tr>
+<tr><td>install.bat</td><td>Cài đặt và kiểm tra môi trường (Python 3.10+, thư viện, cổng, tường lửa, kết nối RCS, RAM, ổ đĩa). Chuột phải → <i>Run as administrator</i> để tự mở cổng tường lửa. Sửa hết các mục [LỖI] trước khi chạy.</td></tr>
 <tr><td>run.bat</td><td>Chạy toàn bộ: MongoDB riêng (cổng 27018), WMS ảo, WCS B, site giao diện, rồi mở trình duyệt. Mỗi thành phần một cửa sổ thu nhỏ "G8B ..." trên thanh tác vụ, tự chạy lại nếu bị dừng – <b>không đóng các cửa sổ này</b>. <code>run.bat stop</code>: dừng toàn bộ; <code>run.bat status</code>: xem trạng thái; <code>run.bat demo</code>: chạy thêm robot / bàn định danh / băng tải giả để thử.</td></tr>
 <tr><td>update.bat</td><td>Cập nhật bản mới từ GitHub: sao lưu và giữ nguyên cấu hình của máy, dừng – cập nhật – kiểm tra – chạy lại hệ thống.</td></tr>
 </table>
 <p>Mở trình duyệt vào <b>http://&lt;IP máy chủ&gt;:5510</b>. Vào thẳng cổng 9100 / 9000 cũng tự chuyển về site này.</p>
-<p><b>Lần đầu cài:</b> cài Python 3.11+ 64-bit → chuột phải <b>install.bat</b> → <i>Run as administrator</i> → sửa hết mục [LỖI] → nhấp đúp <b>run.bat</b>.
+<p><b>Lần đầu cài:</b> cài Python 3.10+ 64-bit → chuột phải <b>install.bat</b> → <i>Run as administrator</i> → sửa hết mục [LỖI] → nhấp đúp <b>run.bat</b>.
 <b>Hằng ngày:</b> chỉ cần <b>run.bat</b> (bấm lại khi đang chạy cũng không sao, thành phần đã chạy được bỏ qua).
 <b>Cập nhật:</b> nhấp đúp <b>update.bat</b>, xem danh sách thay đổi, chọn Y; cấu hình của máy được giữ, bản cũ sao lưu ở <code>backup\\config_&lt;thời gian&gt;</code>.</p>
 

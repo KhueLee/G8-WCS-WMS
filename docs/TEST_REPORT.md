@@ -1,8 +1,8 @@
 # Báo cáo test – G8 luồng B v0.6.0 (25/11/2026)
 
-**Máy test:** Windows 11, Python 3.13, MongoDB 4.4.29 (mongod kèm theo).
+**Máy test:** Windows 11, MongoDB 4.4.29 (mongod kèm theo); chạy trên **Python 3.10.22** (như máy đích) và **Python 3.13**.
 **Kết quả lượt cuối:**
-- v0.6.0: **24/24 PASS** (22 kịch bản đầu cuối + 2 với phần mềm trạm thật). Thêm thử tay 3 file bat: `run.bat stop` / `run.bat demo` / `run.bat status`, tự chạy lại khi tắt cứng WMS (lên lại sau 5 giây), `update.bat` trên bản sao lùi về v0.5.0 (cập nhật được, giữ cấu hình sửa tay kể cả file có BOM, lần 2 báo đã mới nhất).
+- v0.6.0: **24/24 PASS trên cả Python 3.10 và 3.13** (22 kịch bản đầu cuối + 2 với phần mềm trạm thật). Với Python 3.10: `install.bat` tạo `.venv` 3.10 và kiểm tra 0 lỗi, `run.bat demo` chạy đủ thành phần. Thêm thử tay 3 file bat: `run.bat stop` / `run.bat demo` / `run.bat status`, tự chạy lại khi tắt cứng WMS (lên lại sau 5 giây), `update.bat` trên bản sao lùi về v0.5.0 (cập nhật được, giữ cấu hình sửa tay kể cả file có BOM, lần 2 báo đã mới nhất).
 - v0.5.0: 23/23 PASS (21 kịch bản đầu cuối + 2 với phần mềm trạm thật).
 - v0.4.0: 22/22 PASS (20 kịch bản đầu cuối + 2 với phần mềm trạm thật).
 - v0.3.0: 20/20 PASS (18 kịch bản đầu cuối + 2 với phần mềm trạm thật), MongoDB của B ở cổng 27018.
