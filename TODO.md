@@ -58,12 +58,11 @@ Trạng thái: **v0.6.0 (25/11/2026)**; Lee duyệt viết spec + code + test t�
 - [x] Site giao diện cổng **5510**; MongoDB cache tối đa 1 GB.
 - [x] Giao diện luôn nền sáng; ô kệ viền xanh lá = trống, viền cam = có pallet (ghi mã pallet), tab "Vị trí"; nút hướng dẫn PDF ở cuối cột trái; file giao diện gửi `Cache-Control: no-cache`.
 - [x] Gom còn 3 file bat: `install.bat`, `run.bat`, `update.bat` (+ `g8b/ctl.py`).
+- [x] Lee chốt 25/11: TKELog dùng mã vị trí dấu `.`, luồng B dùng `-`, bản tin từ TKELog tự đổi sang `-` (test s22). Kho S chỉ dùng robot đội gầm (latent) = 2.
 
 ## Còn lại
 - [ ] Đổi đích task đang chạy (`questionLocationNew` → `Location_Stocks` + RCS `updateOrderPointInfo`).
 - [ ] API 6 (ASN confirm bằng PDA) – WCS gốc cũng chưa bật. API 9 (đóng lệnh SX) – WCS gốc gắn chung endpoint hủy định danh; hỏi TKSolution có tách riêng không.
-- [ ] Xác minh TKELog đang gửi mã vị trí dạng "." (bản tin thật 19/10: `S02.257.1`) hay "-" (luồng B nhận cả hai, tự đổi sang "-").
-- [ ] Robot mặc định cho kho S / S02: luồng B để 1 (nâng hạ), nhưng bản tin thật của WCS gốc gửi Type_Robot_ID 2 (đội gầm) cho ô S01 / S02 – Lee chốt rồi sửa ở Danh mục → Kho.
 - [ ] Test chéo với các script giả lập của G8-WCS gốc (`scripts/simu_*`, đang viết cứng IP 192.168.x) và `g8-ops-monitor mock_ics`.
 - [ ] Đăng nhập cho giao diện web (hiện mở trong LAN như các tool G8 khác).
 - [ ] Ở hiện trường: thêm mục callback trên RCS, đặt tên điểm zone B, khoá ô zone B trên TKELog, chọn bàn định danh đầu tiên (Line_ID + IP), cấu hình `config/*.json`, chạy thử 1 PO.

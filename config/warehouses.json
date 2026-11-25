@@ -62,7 +62,7 @@
         "S"
       ],
       "wh_code": "WH_TB",
-      "robot": 1,
+      "robot": 2,
       "store": false,
       "active": true
     },
@@ -73,7 +73,7 @@
         "S02"
       ],
       "wh_code": "WH_TB",
-      "robot": 1,
+      "robot": 2,
       "store": false,
       "active": true
     },

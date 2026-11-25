@@ -6,6 +6,42 @@ Hệ tích hợp tự chủ cho G8: **WMS ảo** nói API TKELog V5, **WCS B** n
 - Kết quả test: [docs/TEST_REPORT.md](docs/TEST_REPORT.md)
 - Việc còn lại và quyết định đã chốt: [TODO.md](TODO.md)
 
+## Kéo code về máy (lần đầu)
+
+Cần 2 phần mềm, cài một lần:
+- **Git**: https://git-scm.com/download/win (để mặc định khi cài).
+- **Python 3.11+ 64-bit**: https://www.python.org/downloads/windows/ – khi cài **tick "Add python.exe to PATH"**.
+
+Kéo code (khoảng 25 MB, đã kèm sẵn MongoDB trong `mongodb\bin`). Mở **Command Prompt** và gõ:
+
+```bat
+cd /d C:\
+git clone https://github.com/KhueLee/G8-WCS-WMS.git
+cd G8-WCS-WMS
+```
+
+Code nằm ở `C:\G8-WCS-WMS`. Có thể đặt thư mục khác, nhưng **đường dẫn không nên có dấu tiếng Việt hoặc khoảng trắng**.
+
+Sau đó:
+1. Chuột phải `install.bat` → *Run as administrator*: cài thư viện, mở tường lửa, kiểm tra môi trường. Sửa hết các mục `[LỖI]` nếu có.
+2. Sửa cấu hình cho máy này (IP RCS, trạm, line) trong `config\wcs.json` / `config\wms.json`, hoặc sửa trên web sau khi chạy.
+3. Nhấp đúp `run.bat`, rồi mở `http://<IP máy>:5510`.
+
+Lưu ý:
+- **Không tải file ZIP từ GitHub.** Bản ZIP chạy được, nhưng không cập nhật được bằng `update.bat`, vì `update.bat` cần thư mục là bản `git clone`.
+- **Lần sau chỉ cần nhấp đúp `update.bat`** để lên bản mới. Cấu hình của máy được giữ nguyên.
+- **Máy đã clone từ bản cũ (v0.5.0 trở về trước, chưa có `update.bat`)**: cập nhật một lần bằng tay, rồi chạy lại `install.bat`:
+
+  ```bat
+  cd /d C:\G8-WCS-WMS
+  git pull
+  ```
+
+  Nếu `git pull` báo xung đột ở `config\`:
+  1. Chép thư mục `config` ra chỗ khác.
+  2. Chạy `git checkout -- config` rồi `git pull`.
+  3. Chép lại các file cấu hình của máy.
+
 ## Cài và chạy (Windows)
 
 Chỉ có **3 file** ở thư mục gốc:
@@ -48,7 +84,7 @@ Các bước:
 **Chạy thử trên một máy không cần thiết bị:** `run.bat demo` (hoặc nhấp đúp `tools\run_demo.bat`) bật thêm RCS / bàn định danh / băng tải giả.
 
 **Test:**
-- `tools\run_tests.bat` chạy 21 kịch bản đầu cuối trên cổng và DB riêng, không đụng dữ liệu đang chạy.
+- `tools\run_tests.bat` chạy 22 kịch bản đầu cuối trên cổng và DB riêng, không đụng dữ liệu đang chạy.
 - Test với phần mềm trạm thật ở chế độ mô phỏng:
   ```
   .venv\Scripts\python tests\g8_modules_test.py --export C:\G8-Export --id C:\G8-ID\G8-ID-Deploy
@@ -69,7 +105,7 @@ g8b/
   sim.py        simulator RCS / bàn định danh / băng tải xuất
   static/       giao diện web
 config/         wcs.json, wms.json, web.json, warehouses.json (kho), locations.xlsx (vị trí form highbay)
-tests/          e2e_test.py (21 kịch bản), g8_modules_test.py (G8-Export, G8-ID thật)
+tests/          e2e_test.py (22 kịch bản), g8_modules_test.py (G8-Export, G8-ID thật)
 docs/           SPEC.md, TEST_REPORT.md, HUONG_DAN_SU_DUNG.pdf (+ guide_img/, tạo bằng tools/build_guide.py)
 tools/          run_demo.bat, run_tests.bat, build_guide.py
 logs/           log từng app, xoay theo ngày, giữ 30 ngày

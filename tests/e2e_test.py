@@ -569,6 +569,25 @@ def s21_web_site():
     start("wcs")
 
 
+@scenario
+def s22_tkelog_dot_location_and_latent_robot():
+    # TKELog (WMS gốc) dùng dấu "." – WCS B tự đổi sang "-" khi nhận
+    body = {"Task_ID": "1/1_MovePallet_dot", "WH_Code": "WH_TB", "Pallet_ID": "LPN-DOT", "Type_Robot_ID": 2,
+            "Type_Move_ID": 11, "Location_Old": "BDD09", "Location_New": "S02.251.2"}
+    assert post("wcs", "/move-service/task/wms/move_pallet", body)["code"] == 200
+    until(lambda: any(m["task_id"] == "1/1_MovePallet_dot" and m["status"] == "SUCCEEDED" for m in get("wcs", "/api/moves")),
+          what="task dấu chấm chạy xong")
+    m = next(m for m in get("wcs", "/api/moves") if m["task_id"] == "1/1_MovePallet_dot")
+    assert m["loc_new"] == "S02-251-2", m
+    assert loc("wcs", "S02-251-2")["state"] == "FULL"
+    # kho S tự tạo khi nạp file: robot mặc định đội gầm (2); kho khác nâng hạ (1)
+    with tempfile.TemporaryDirectory() as d:
+        wh = L.Warehouses(os.path.join(d, "wh.json"))
+        wh.ensure_for(["S01-1-1", "S02-1-1", "S-5-1", "C24-1-1", "A1-1-1"])
+        got = {w["code"]: w["robot"] for w in wh.all()}
+    assert got == {"S": 2, "S02": 2, "C": 1, "A": 1}, got
+
+
 def main():
     sys.stdout.reconfigure(encoding="utf-8")
     for db in (DB_WCS, DB_WMS):
@@ -578,7 +597,7 @@ def main():
         for n in ("rcs", "ids", "scs", "wms", "wcs", "web"):
             start(n)
         for fn in (s01_move_group_success, s02_move_fail_skip_then_retry, s03_unknown_location_and_bad_robot,
-                   s04_duplicate_task_id, s05_identify_po_full_flow, s06_identify_asn, s07_identify_cancel,
+                   s04_duplicate_task_id, s22_tkelog_dot_location_and_latent_robot, s05_identify_po_full_flow, s06_identify_asn, s07_identify_cancel,
                    s08_export_do, s09_wms_outage_retry, s10_line_not_owned_and_cutover,
                    s11_foreign_rcs_callback_ignored, s12_restart_wcs_mid_task_polling_only,
                    s13_restart_wms_outbox_survives, s14_dest_busy_waits, s15_manual_move_and_raw_order,

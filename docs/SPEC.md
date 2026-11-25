@@ -10,7 +10,8 @@ Tài liệu mô tả đúng hành vi của mã nguồn trong repo này (`g8b/`).
   - **RCS HuaRay dùng chung**: mọi task của A và B đều vào cùng một RCS, areaId 2.
 - **Không sửa phần mềm trạm.** WCS B nói đúng device API mà G8-ID / G8-Export đang dùng với WCS gốc. Chuyển trạm A ↔ B chỉ là đổi URL (mục 7).
 - **WMS ảo nói đúng API TKELog V5** theo hành vi thật của G8-WCS gốc. Nhờ vậy WCS B, nếu cần, có thể nối thẳng TKELog.
-- **Mã vị trí** dạng `Rack-Cột-Tầng` với dấu `-` (vd. `S02-257-1`) ở mọi nơi. Mã nhận vào có dấu `.` được tự đổi sang `-`.
+- **Mã vị trí** dạng `Rack-Cột-Tầng` với dấu `-` (vd. `S02-257-1`) ở mọi nơi trong luồng B (WMS ảo, WCS B, tên điểm RCS).
+  - TKELog (WMS gốc, luồng A) dùng dấu `.` (vd. `S02.257.1`). Hai hệ chạy song song; bản tin dạng TKELog đẩy xuống WCS B / WMS ảo được **tự đổi `.` sang `-`** ở mọi trường vị trí (`Location_Old`, `Location_New`, `Location`…), lưu và gửi RCS bằng dấu `-` (test s22).
   - Tên điểm trên RCS trùng mã vị trí, nên WCS B gửi thẳng mã vào `taskPath`, không qua bảng mapping.
 - **Công nghệ:** Python 3.11+, FastAPI, MongoDB 4.4+.
   - Chạy bằng file `.bat` gọi Python, không đóng gói exe.
@@ -205,7 +206,7 @@ Line đang tắt thì WCS B từ chối lệnh mới (201). Lệnh cho line khô
   - Lưu file luôn giữ bản `.bak`. Nạp lại không làm mất trạng thái ô còn trong file.
   - `rcs.path_by`: `code` (mặc định, tên điểm RCS = mã vị trí) hoặc `node` (gửi Node trong file highbay).
 - **Kho (ghép điểm theo tiền tố)** – `config/warehouses.json`, dùng chung; sửa ở WMS ảo (`GET/PUT /api/warehouses`), WCS B chỉ xem:
-  - Mỗi kho: mã, tên, các tiền tố điểm, WH_Code gửi trong bản tin TKELog, robot mặc định (1 nâng hạ / 2 đội gầm), "cất TP" (kho mặc định cất pallet định danh xong), dùng / ngừng.
+  - Mỗi kho: mã, tên, các tiền tố điểm, WH_Code gửi trong bản tin TKELog, robot mặc định (1 nâng hạ / 2 đội gầm; **kho S – S, S01, S02… – chỉ dùng robot đội gầm (latent) = 2**, kho tự tạo khi nạp file theo quy tắc này, kho khác mặc định 1), "cất TP" (kho mặc định cất pallet định danh xong), dùng / ngừng.
   - Một điểm thuộc kho có tiền tố khớp **dài nhất** (S02-… vào kho S02 trước kho S).
   - Nạp file thì **tạo đủ kho cho mọi tiền tố trong file**: nhóm theo chữ cái đầu (A, B, C, D, E, S, T), riêng S02 tách kho; tên có sẵn: C = Kho thành phẩm, S02 = Kho lắp ráp LED trụ, D = Kho 2500.
   - Hiện quản lý **100 điểm**: 50 điểm S02 và 50 điểm C, lấy từ file "Area_G8_NVL_SLAM_High Location_20261116.xlsx" (5.782 điểm).
@@ -225,7 +226,7 @@ Line đang tắt thì WCS B từ chối lệnh mới (201). Lệnh cho line khô
 
 ## 10. Kiểm thử
 
-- `tools\run_tests.bat` (`tests/e2e_test.py`) chạy 21 kịch bản đầu cuối trên cổng và DB riêng:
+- `tools\run_tests.bat` (`tests/e2e_test.py`) chạy 22 kịch bản đầu cuối trên cổng và DB riêng:
   1. Move nhóm 2 bước.
   2. RCS báo lỗi → SKIPPED → chạy lại.
   3. Vị trí sai / robot sai.
@@ -247,6 +248,7 @@ Line đang tắt thì WCS B từ chối lệnh mới (201). Lệnh cho line khô
   19. Nạp file RAW, chọn kho / số điểm, xoá kéo theo pallet.
   20. Danh mục sản phẩm, 4 loại lệnh WMS, sửa tay pallet / ô.
   21. Site giao diện chung (chuyển tiếp API, xuất RAW, hướng dẫn PDF, báo lỗi khi app tắt).
+  22. Bản tin dạng TKELog có mã vị trí dấu "." được đổi sang "-"; kho S tự tạo có robot đội gầm.
 - `tests/g8_modules_test.py` test với phần mềm trạm thật ở chế độ mô phỏng (G8-Export, G8-ID). Kết quả ghi ở `docs/TEST_REPORT.md`.
 
 ## 11. Chưa làm / còn mở

@@ -138,7 +138,7 @@ def body() -> str:
 <p>Mã, tên, nhóm, <b>quy cách thùng</b> (chiếc/thùng), <b>quy cách pallet</b> (thùng/pallet), GW / NW kg/thùng. Bấm Sửa để nạp vào form; không xoá được sản phẩm còn tồn (bỏ tick "Dùng" để ngừng dùng).</p>
 {fig("w_products", "Danh mục → Sản phẩm")}
 <h2>7.2 Kho</h2>
-<p>Kho chỉ để ghép điểm theo <b>tiền tố mã</b>. Một điểm thuộc kho có tiền tố khớp dài nhất (S02-… vào kho S02 trước kho S). Mỗi kho có WH_Code (gửi trong bản tin TKELog), robot mặc định, và dấu "Cất TP" cho kho mặc định cất pallet định danh xong.</p>
+<p>Kho chỉ để ghép điểm theo <b>tiền tố mã</b>. Một điểm thuộc kho có tiền tố khớp dài nhất (S02-… vào kho S02 trước kho S). Mỗi kho có WH_Code (gửi trong bản tin TKELog), robot mặc định (<b>kho S chỉ dùng robot đội gầm – latent</b>, các kho khác nâng hạ), và dấu "Cất TP" cho kho mặc định cất pallet định danh xong.</p>
 {fig("w_wh", "Danh mục → Kho")}
 <h2>7.3 Danh sách vị trí (highbay)</h2>
 <ul>

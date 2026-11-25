@@ -49,6 +49,12 @@ LEVEL_HEIGHTS = [280, 1620, 2920, 4270]   # chiều cao tầng 1..4 trong file h
 RAW_COLS = {"node": 3, "rack": 6, "col": 7, "level": 8, "code": 10, "level_height": 12, "coord": 14}
 # tên kho biết trước theo tiền tố (sửa được trên giao diện)
 KNOWN_WH = {"C": "Kho thành phẩm", "S02": "Kho lắp ráp LED trụ", "D": "Kho 2500"}
+# robot mặc định khi tự tạo kho: kho S (S, S01, S02…) chỉ dùng robot đội gầm (latent) = 2; kho khác nâng hạ = 1
+ROBOT_LATENT_PREFIXES = ("S",)
+
+
+def default_robot(group: str) -> int:
+    return 2 if group.startswith(ROBOT_LATENT_PREFIXES) else 1
 
 log = logging.getLogger("locations")
 CODE_RE = re.compile(r"[A-Z0-9]+(-[A-Z0-9]+)+")
@@ -312,7 +318,7 @@ class Warehouses:
         has_store = any(w.get("store") for w in items)
         for g in groups:
             items.append({"code": g, "name": KNOWN_WH.get(g, f"Kho {g}"), "prefixes": [g], "wh_code": "WH_TB",
-                          "robot": 1, "store": (g == "C" and not has_store), "active": True})
+                          "robot": default_robot(g), "store": (g == "C" and not has_store), "active": True})
         self.save(items)
         return groups
 
